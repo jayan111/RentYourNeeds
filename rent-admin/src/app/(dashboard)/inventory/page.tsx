@@ -40,7 +40,7 @@ export default function InventoryPage() {
       
       const response = await fetch(`/api/inventory?${params}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
       const data = await response.json();
@@ -58,7 +58,7 @@ export default function InventoryPage() {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify({ status: newStatus })
       });
@@ -90,7 +90,7 @@ export default function InventoryPage() {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify(editingItem)
       });

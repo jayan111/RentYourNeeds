@@ -1,300 +1,144 @@
 import { Request, Response } from 'express';
 import { getDB } from '../config/database';
-import { Product } from '../types';
+import { AuthenticatedRequest } from '../types';
 import { invalidateCache } from '../middleware/cache';
 import { addJob } from '../services/queue';
+import { RowDataPacket } from 'mysql2';
+import { parseImages, parseSubscriptionDurations, normalizeImageUrls } from '../utils/productJson';
 
-const mockProducts = [
-  // Electronics - Lower Price Range
-  {
-    id: '1',
-    name: 'Bluetooth Headphones',
-    description: 'Wireless noise-cancelling headphones',
-    price: 50,
-    category: 'electronics',
-    stock: 15,
-    rating: 4.5,
-    reviews: 89,
-    images: [
-      'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1484704849700-f032a568e944?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Mumbai',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '2',
-    name: 'Wireless Speaker',
-    description: 'Portable Bluetooth speaker with bass',
-    price: 75,
-    category: 'electronics',
-    stock: 12,
-    rating: 4.3,
-    reviews: 156,
-    images: [
-      'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1545454675-3531b543be5d?w=600&h=400&fit=crop'
-    ],
-    condition: 'Very Good',
-    location: 'Delhi',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '3',
-    name: 'Gaming Mouse',
-    description: 'RGB gaming mouse with precision sensor',
-    price: 35,
-    category: 'electronics',
-    stock: 20,
-    rating: 4.6,
-    reviews: 234,
-    images: [
-      'https://images.unsplash.com/photo-1527814050087-3793815479db?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Bangalore',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '4',
-    name: 'Mechanical Keyboard',
-    description: 'RGB mechanical keyboard for gaming',
-    price: 120,
-    category: 'electronics',
-    stock: 8,
-    rating: 4.7,
-    reviews: 178,
-    images: [
-      'https://images.unsplash.com/photo-1541140532154-b024d705b90a?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&h=400&fit=crop'
-    ],
-    condition: 'Very Good',
-    location: 'Chennai',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '5',
-    name: 'Webcam HD',
-    description: '1080p HD webcam for streaming',
-    price: 85,
-    category: 'electronics',
-    stock: 10,
-    rating: 4.4,
-    reviews: 92,
-    images: [
-      'https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=600&h=400&fit=crop'
-    ],
-    condition: 'Good',
-    location: 'Pune',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  // Photography - Lower Price Range
-  {
-    id: '6',
-    name: 'Camera Tripod',
-    description: 'Adjustable tripod for DSLR cameras',
-    price: 45,
-    category: 'photography',
-    stock: 18,
-    rating: 4.2,
-    reviews: 67,
-    images: [
-      'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Hyderabad',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '7',
-    name: 'Camera Lens 50mm',
-    description: 'Prime lens for portrait photography',
-    price: 180,
-    category: 'photography',
-    stock: 5,
-    rating: 4.8,
-    reviews: 145,
-    images: [
-      'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&h=400&fit=crop'
-    ],
-    condition: 'Very Good',
-    location: 'Kolkata',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '8',
-    name: 'Ring Light',
-    description: 'LED ring light for photography and videos',
-    price: 65,
-    category: 'photography',
-    stock: 14,
-    rating: 4.5,
-    reviews: 203,
-    images: [
-      'https://images.unsplash.com/photo-1473968512647-3e447244af8f?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Ahmedabad',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '9',
-    name: 'Camera Bag',
-    description: 'Professional camera bag with padding',
-    price: 55,
-    category: 'photography',
-    stock: 22,
-    rating: 4.3,
-    reviews: 78,
-    images: [
-      'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1581833971358-2c8b550f87b3?w=600&h=400&fit=crop'
-    ],
-    condition: 'Good',
-    location: 'Jaipur',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '10',
-    name: 'Memory Card 64GB',
-    description: 'High-speed SD card for cameras',
-    price: 25,
-    category: 'photography',
-    stock: 30,
-    rating: 4.6,
-    reviews: 312,
-    images: [
-      'https://images.unsplash.com/photo-1541140532154-b024d705b90a?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Surat',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  // Higher Price Items
-  {
-    id: '11',
-    name: 'MacBook Pro 16"',
-    description: 'High-performance laptop for professionals',
-    price: 3500,
-    category: 'electronics',
-    stock: 5,
-    rating: 4.8,
-    reviews: 124,
-    images: [
-      'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Mumbai',
-    created_at: new Date(),
-    updated_at: new Date()
-  },
-  {
-    id: '12',
-    name: 'Canon EOS R5',
-    description: 'Professional mirrorless camera',
-    price: 5200,
-    category: 'photography',
-    stock: 3,
-    rating: 4.9,
-    reviews: 89,
-    images: [
-      'https://images.unsplash.com/photo-1606983340126-99ab4feaa64a?w=600&h=400&fit=crop',
-      'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=600&h=400&fit=crop'
-    ],
-    condition: 'Excellent',
-    location: 'Chennai',
-    created_at: new Date(),
-    updated_at: new Date()
-  }
-];
+interface ProductRow extends RowDataPacket {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category_id: string;
+  stock: number;
+  rating: number;
+  reviews: number;
+  images: string | string[] | null;
+  condition_type: string;
+  location: string;
+  availability: string;
+  subscription_durations: string | number[] | null;
+  is_active: boolean;
+  created_at: Date;
+  updated_at: Date;
+  category_name?: string;
+}
 
 export const getProducts = async (req: Request, res: Response) => {
   try {
     const { 
       category, 
       minPrice, 
-      maxPrice, 
-      limit = 20, 
-      offset = 0, 
       search, 
       sortBy = 'relevance',
-      rating 
+      rating,
+      page = 1,
+      limit = 9
     } = req.query;
     
-    let filteredProducts = [...mockProducts];
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    let query = `
+      SELECT p.*, c.name as category_name 
+      FROM products p 
+      LEFT JOIN categories c ON p.category_id = c.id 
+      WHERE p.is_active = TRUE AND p.availability = 'available'
+    `;
+    const params: any[] = [];
     
     if (search) {
-      const searchTerm = (search as string).toLowerCase();
-      filteredProducts = filteredProducts.filter(p => 
-        p.name.toLowerCase().includes(searchTerm) ||
-        p.description.toLowerCase().includes(searchTerm) ||
-        p.category.toLowerCase().includes(searchTerm)
-      );
+      query += ` AND (p.name LIKE ? OR p.description LIKE ? OR c.name LIKE ?)`;
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
     }
     
     if (category && category !== 'all') {
-      filteredProducts = filteredProducts.filter(p => p.category === category);
+      query += ` AND p.category_id = ?`;
+      params.push(category);
     }
     
     if (minPrice) {
-      filteredProducts = filteredProducts.filter(p => p.price >= parseInt(minPrice as string));
-    }
-
-    if (maxPrice) {
-      filteredProducts = filteredProducts.filter(p => p.price <= parseInt(maxPrice as string));
+      query += ` AND p.price >= ?`;
+      params.push(parseInt(minPrice as string));
     }
     
     if (rating) {
-      filteredProducts = filteredProducts.filter(p => p.rating >= parseFloat(rating as string));
+      query += ` AND p.rating >= ?`;
+      params.push(parseFloat(rating as string));
     }
     
+    // Sorting
     switch (sortBy) {
       case 'price-low':
-        filteredProducts.sort((a, b) => a.price - b.price);
+        query += ` ORDER BY p.price ASC`;
         break;
       case 'price-high':
-        filteredProducts.sort((a, b) => b.price - a.price);
+        query += ` ORDER BY p.price DESC`;
         break;
       case 'rating':
-        filteredProducts.sort((a, b) => b.rating - a.rating);
+        query += ` ORDER BY p.rating DESC`;
         break;
       case 'newest':
-        filteredProducts.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        query += ` ORDER BY p.created_at DESC`;
         break;
       default:
+        query += ` ORDER BY p.created_at DESC`;
         break;
     }
     
-    const page = parseInt((req.query.page as string) || '1');
+    // Count total products for pagination
+    const countQuery = query.replace('SELECT p.*, c.name as category_name', 'SELECT COUNT(*) as total').split('ORDER BY')[0];
+    const [countResult] = await db.query<any[]>(countQuery, params);
+    const total = countResult[0]?.total || 0;
+    
+    // Pagination
+    const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const startIndex = (page - 1) * limitNum;
-    const endIndex = startIndex + limitNum;
-    const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+    const offset = (pageNum - 1) * limitNum;
+    
+    query += ` LIMIT ? OFFSET ?`;
+    params.push(limitNum, offset);
+    
+    const [products] = await db.query<ProductRow[]>(query, params);
+    
+    const formattedProducts = products.map(product => {
+      const parsedImages = normalizeImageUrls(parseImages(product.images));
+      const parsedSubscriptionDurations = parseSubscriptionDurations(product.subscription_durations);
+      
+      return {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        category: product.category_id,
+        categoryName: product.category_name,
+        stock: product.stock,
+        rating: product.rating,
+        reviews: product.reviews,
+        images: parsedImages,
+        condition: product.condition_type,
+        location: product.location,
+        availability: product.availability,
+        subscriptionDurations: parsedSubscriptionDurations,
+        created_at: product.created_at,
+        updated_at: product.updated_at
+      };
+    });
+    
+    const totalPages = Math.ceil(total / limitNum);
+    const hasMore = pageNum < totalPages;
     
     const response = {
-      data: paginatedProducts,
-      total: filteredProducts.length,
-      page: page,
-      totalPages: Math.ceil(filteredProducts.length / limitNum),
-      hasMore: endIndex < filteredProducts.length,
+      data: formattedProducts,
+      total,
+      page: pageNum,
+      totalPages,
+      hasMore,
       limit: limitNum
     };
     
@@ -308,63 +152,201 @@ export const getProducts = async (req: Request, res: Response) => {
 export const getProductById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const db = await getDB();
     
-    const product = mockProducts.find(p => p.id === id);
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
     
-    if (!product) {
+    const [products] = await db.query<ProductRow[]>(
+      `SELECT p.*, c.name as category_name 
+       FROM products p 
+       LEFT JOIN categories c ON p.category_id = c.id 
+       WHERE p.id = ? AND p.is_active = TRUE`,
+      [id]
+    );
+    
+    if (!products || products.length === 0) {
       return res.status(404).json({ message: 'Product not found' });
     }
     
-    res.json({ data: product });
+    const product = products[0];
+    const parsedImages = normalizeImageUrls(parseImages(product.images));
+    const parsedSubscriptionDurations = parseSubscriptionDurations(product.subscription_durations);
+    
+    const formattedProduct = {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      category: product.category_id,
+      categoryName: product.category_name,
+      stock: product.stock,
+      rating: product.rating,
+      reviews: product.reviews,
+      images: parsedImages,
+      condition: product.condition_type,
+      location: product.location,
+      availability: product.availability,
+      subscriptionDurations: parsedSubscriptionDurations,
+      created_at: product.created_at,
+      updated_at: product.updated_at
+    };
+    
+    res.json({ data: formattedProduct });
   } catch (error) {
     console.error('Get product error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-export const createProduct = async (req: Request, res: Response) => {
+export const createProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, description, price, category, stock, images } = req.body;
+    const { 
+      name, 
+      description, 
+      price, 
+      category, // Accept category instead of category_id
+      stock, 
+      images, 
+      condition = 'Good', // Accept condition instead of condition_type
+      location,
+      subscription_durations = [3, 6, 12]
+    } = req.body;
     
     if (!name || !price || !category) {
       return res.status(400).json({ message: 'Name, price, and category are required' });
     }
     
-    const productId = Date.now().toString();
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
     
-    // Invalidate product cache
-    await invalidateCache.products();
+    const productId = `product_${Date.now()}`;
     
-    // Add analytics job
-    await addJob.analytics({
-      event: 'product_created',
-      userId: req.user?.id || 'admin',
-      data: { productId, category, price }
-    });
+    await db.query(
+      `INSERT INTO products (id, name, description, price, category_id, stock, images, condition_type, location, subscription_durations) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        productId, 
+        name, 
+        description, 
+        price, 
+        category, // Use category as category_id
+        stock || 0, 
+        JSON.stringify(images || []), 
+        condition, // Use condition as condition_type
+        location,
+        JSON.stringify(subscription_durations)
+      ]
+    );
+    
+    // Get the created product with all details
+    const [products] = await db.query<ProductRow[]>(
+      `SELECT p.*, c.name as category_name 
+       FROM products p 
+       LEFT JOIN categories c ON p.category_id = c.id 
+       WHERE p.id = ?`,
+      [productId]
+    );
+    
+    if (!products || products.length === 0) {
+      return res.status(500).json({ message: 'Failed to retrieve created product' });
+    }
+    
+    const product = products[0];
+    const parsedImages = normalizeImageUrls(parseImages(product.images));
+    const parsedSubscriptionDurations = parseSubscriptionDurations(product.subscription_durations);
+    
+    const formattedProduct = {
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      category: product.category_id,
+      categoryName: product.category_name,
+      stock: product.stock,
+      rating: product.rating,
+      reviews: product.reviews,
+      images: parsedImages,
+      condition: product.condition_type,
+      location: product.location,
+      availability: product.availability,
+      subscriptionDurations: parsedSubscriptionDurations,
+      created_at: product.created_at,
+      updated_at: product.updated_at
+    };
+    
+    // Try to invalidate cache, but don't fail if it doesn't work
+    try {
+      await invalidateCache.products();
+    } catch (cacheError) {
+      console.log('Cache invalidation failed:', cacheError);
+    }
+    
+    // Try to add analytics job, but don't fail if it doesn't work
+    try {
+      await addJob.analytics({
+        event: 'product_created',
+        userId: req.user?.id || 'admin',
+        data: { productId, category, price }
+      });
+    } catch (queueError) {
+      console.log('Analytics job failed:', queueError);
+    }
     
     res.status(201).json({
       message: 'Product created successfully',
-      data: { id: productId, ...req.body }
+      data: formattedProduct
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create product error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
-export const updateProduct = async (req: Request, res: Response) => {
+export const updateProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const updates = req.body;
     
-    // Invalidate specific product and products cache
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+    
+    const updateFields: string[] = [];
+    const values: any[] = [];
+    
+    Object.keys(updates).forEach(key => {
+      if (['images', 'subscription_durations'].includes(key)) {
+        updateFields.push(`${key} = ?`);
+        values.push(JSON.stringify(updates[key]));
+      } else if (key !== 'id') {
+        updateFields.push(`${key} = ?`);
+        values.push(updates[key]);
+      }
+    });
+    
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No valid fields to update' });
+    }
+    
+    values.push(id);
+    
+    await db.query(
+      `UPDATE products SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+    
     await invalidateCache.product(id);
     
-    // Add inventory update job if stock changed
-    if (req.body.stock !== undefined) {
+    if (updates.stock !== undefined) {
       await addJob.inventory({
         productId: id,
         action: 'stock_update',
-        quantity: req.body.stock
+        quantity: updates.stock
       });
     }
     
@@ -375,14 +357,19 @@ export const updateProduct = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteProduct = async (req: Request, res: Response) => {
+export const deleteProduct = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     
-    // Invalidate caches
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+    
+    await db.query('UPDATE products SET is_active = FALSE WHERE id = ?', [id]);
+    
     await invalidateCache.product(id);
     
-    // Add analytics job
     await addJob.analytics({
       event: 'product_deleted',
       userId: req.user?.id || 'admin',

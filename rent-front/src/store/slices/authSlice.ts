@@ -5,12 +5,16 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   loading: boolean;
+  accessToken: string | null;
+  refreshToken: string | null;
 }
 
 const initialState: AuthState = {
   user: null,
   isAuthenticated: false,
   loading: false,
+  accessToken: null,
+  refreshToken: null,
 };
 
 const authSlice = createSlice({
@@ -21,6 +25,29 @@ const authSlice = createSlice({
       state.user = action.payload;
       state.isAuthenticated = true;
       state.loading = false;
+    },
+    
+    setTokens: (state, action: PayloadAction<{ accessToken: string; refreshToken: string }>) => {
+      state.accessToken = action.payload.accessToken;
+      state.refreshToken = action.payload.refreshToken;
+    },
+    
+    updateAccessToken: (state, action: PayloadAction<string>) => {
+      state.accessToken = action.payload;
+    },
+    
+    logout: (state) => {
+      state.user = null;
+      state.isAuthenticated = false;
+      state.loading = false;
+      state.accessToken = null;
+      state.refreshToken = null;
+      // Clear from localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('user');
+      }
     },
     
     clearUser: (state) => {
@@ -35,5 +62,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { setUser, clearUser, setLoading } = authSlice.actions;
+export const { setUser, setTokens, updateAccessToken, logout, clearUser, setLoading } = authSlice.actions;
 export default authSlice.reducer;

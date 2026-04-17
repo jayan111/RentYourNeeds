@@ -7,10 +7,10 @@ import { cn } from '@/lib/utils';
 
 interface ImageCarouselProps {
   images: string[];
-  productName: string;
+  productName?: string;
 }
 
-export function ImageCarousel({ images, productName }: ImageCarouselProps) {
+export function ImageCarousel({ images, productName = 'Product' }: ImageCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
 
   const nextImage = () => {

@@ -68,7 +68,7 @@ export default function ProductDetailPage() {
     );
   }
 
-  const monthlyPrice = product.price * 30; // Convert daily price to monthly
+  const monthlyPrice = product.price; // Convert daily price to monthly
   const totalPrice = monthlyPrice * tenureMonths * quantity;
 
   return (
@@ -141,11 +141,11 @@ export default function ProductDetailPage() {
           {/* Pricing */}
           <div className="bg-gray-50 p-4 sm:p-6 rounded-lg mb-6">
             <div className="flex flex-wrap items-baseline mb-2">
-              <span className="text-lg text-gray-500 line-through mr-2">${Math.round(monthlyPrice * 1.8)}</span>
-              <span className="text-2xl sm:text-3xl font-bold text-primary-600">${monthlyPrice}</span>
+              <span className="text-lg text-gray-500 line-through mr-2">{Math.round(monthlyPrice * 1.8)}</span>
+              <span className="text-2xl sm:text-3xl font-bold text-primary-600">{monthlyPrice}</span>
               <span className="text-gray-600 ml-2 text-sm sm:text-base">/month</span>
             </div>
-            <p className="text-sm text-green-600 font-medium mb-4">Save ${Math.round(monthlyPrice * 0.8)} per month!</p>
+            <p className="text-sm text-green-600 font-medium mb-4">Save {Math.round(monthlyPrice * 0.8)} per month!</p>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
               <TenureSelector
@@ -171,7 +171,7 @@ export default function ProductDetailPage() {
             <div className="border-t pt-4">
               <div className="flex justify-between items-center text-base sm:text-lg font-semibold">
                 <span>Total:</span>
-                <span className="text-primary-600 text-lg sm:text-xl">${totalPrice}</span>
+                <span className="text-primary-600 text-lg sm:text-xl">{totalPrice}</span>
               </div>
             </div>
           </div>

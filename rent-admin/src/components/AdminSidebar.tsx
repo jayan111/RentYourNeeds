@@ -7,25 +7,28 @@ import {
   LayoutDashboard,
   Users,
   Package,
+  Archive,
   CreditCard,
   Settings,
   BarChart3,
   Wrench,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  User
 } from 'lucide-react';
 
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/' },
   { icon: Package, label: 'Products', href: '/products' },
   { icon: Users, label: 'Users', href: '/users' },
-  { icon: Package, label: 'Inventory', href: '/inventory' },
-  { icon: CreditCard, label: 'Subscriptions', href: '/subscriptions' },
+  { icon: Archive, label: 'Inventory', href: '/inventory' },
   { icon: FileText, label: 'Orders', href: '/orders' },
+  { icon: CreditCard, label: 'Subscriptions', href: '/subscriptions' },
   { icon: Wrench, label: 'Maintenance', href: '/maintenance' },
   { icon: AlertTriangle, label: 'Damages', href: '/damages' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-  { icon: Settings, label: 'Settings', href: '/settings' }
+  { icon: Settings, label: 'Settings', href: '/settings' },
+  { icon: User, label: 'Profile', href: '/profile' }
 ];
 
 export function AdminSidebar() {

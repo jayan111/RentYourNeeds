@@ -26,7 +26,8 @@ export function useAuth() {
       }
 
       try {
-        const response = await fetch('http://localhost:8000/api/auth/verify', {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+        const response = await fetch(`${apiUrl}/auth/verify`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }

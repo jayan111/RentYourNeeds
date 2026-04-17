@@ -9,7 +9,9 @@ interface User {
   name: string;
   email: string;
   phone: string;
-  kycStatus: 'pending' | 'verified' | 'rejected';
+  role: string;
+  is_active: boolean;
+  kycStatus?: 'pending' | 'verified' | 'rejected';
   created_at: string;
 }
 
@@ -19,10 +21,15 @@ export default function UsersPage() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const response = await fetch(`http://localhost:8000/api/users?kycStatus=${filter !== 'all' ? filter : ''}`);
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${apiUrl}/admin/users?search=${search}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await response.json();
         setUsers(data.data || []);
       } catch (error) {
@@ -33,20 +40,48 @@ export default function UsersPage() {
     };
 
     fetchUsers();
-  }, [filter]);
+  }, [filter, search]);
+
+  const handleToggleActive = async (userId: string, currentActive: boolean) => {
+    try {
+      const token = localStorage.getItem('token');
+      await fetch(`${apiUrl}/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ is_active: !currentActive })
+      });
+
+      const response = await fetch(`${apiUrl}/admin/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setUsers(data.data || []);
+    } catch (error) {
+      console.error('Failed to update user:', error);
+    }
+  };
 
   const handleKYCAction = async (userId: string, action: 'approve' | 'reject') => {
     try {
-      await fetch(`http://localhost:8000/api/users/kyc/${userId}/verify`, {
+      const token = localStorage.getItem('token');
+      await fetch(`${apiUrl}/admin/users/${userId}/verify`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          documentType: 'aadhar', 
-          status: action === 'approve' ? 'approved' : 'rejected' 
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          documentType: 'aadhar',
+          status: action === 'approve' ? 'approved' : 'rejected'
         })
       });
-      
-      const response = await fetch(`http://localhost:8000/api/users?kycStatus=${filter !== 'all' ? filter : ''}`);
+
+      const response = await fetch(`${apiUrl}/admin/users`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       const data = await response.json();
       setUsers(data.data || []);
     } catch (error) {
@@ -171,9 +206,11 @@ export default function UsersPage() {
                     <div className="text-sm text-gray-500">{user.phone}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      {getStatusIcon(user.kycStatus)}
-                      <span className="ml-2 text-sm capitalize">{user.kycStatus}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                        {user.is_active ? 'Active' : 'Blocked'}
+                      </span>
+                      <span className="text-xs text-gray-500 capitalize">{user.role}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -184,30 +221,12 @@ export default function UsersPage() {
                       <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
-                        className="text-blue-600 hover:text-blue-900"
+                        onClick={() => handleToggleActive(user.id, user.is_active)}
+                        className={user.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}
+                        title={user.is_active ? 'Block user' : 'Unblock user'}
                       >
-                        <Eye className="w-4 h-4" />
+                        {user.is_active ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
                       </motion.button>
-                      {user.kycStatus === 'pending' && (
-                        <>
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => handleKYCAction(user.id, 'approve')}
-                            className="text-green-600 hover:text-green-900"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                          </motion.button>
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => handleKYCAction(user.id, 'reject')}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            <XCircle className="w-4 h-4" />
-                          </motion.button>
-                        </>
-                      )}
                     </div>
                   </td>
                 </motion.tr>

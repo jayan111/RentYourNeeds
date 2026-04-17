@@ -1,23 +1,19 @@
-import express from 'express';
-import {
-  createSubscription,
-  getUserSubscriptions,
-  pauseSubscription,
-  cancelSubscription,
-  getPaymentHistory,
-  processPayment
+import { Router } from 'express';
+import { 
+  getUserSubscriptions, 
+  getSubscriptionById, 
+  cancelSubscription, 
+  pauseSubscription, 
+  resumeSubscription 
 } from '../controllers/subscriptionController';
+import { authenticateToken } from '../middleware/auth';
 
-const router = express.Router();
+const router = Router();
 
-// Subscription routes
-router.post('/', createSubscription);
-router.get('/user', getUserSubscriptions);
-router.patch('/:id/pause', pauseSubscription);
-router.patch('/:id/cancel', cancelSubscription);
-
-// Payment routes
-router.get('/:subscriptionId/payments', getPaymentHistory);
-router.post('/payments', processPayment);
+router.get('/', authenticateToken, getUserSubscriptions);
+router.get('/:id', authenticateToken, getSubscriptionById);
+router.post('/:id/cancel', authenticateToken, cancelSubscription);
+router.post('/:id/pause', authenticateToken, pauseSubscription);
+router.post('/:id/resume', authenticateToken, resumeSubscription);
 
 export default router;

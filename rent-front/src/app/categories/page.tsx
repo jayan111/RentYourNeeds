@@ -21,11 +21,20 @@ export default function CategoriesPage() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/categories');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+        const response = await fetch(`${apiUrl}/categories`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         const data = await response.json();
-        setCategories(data.data);
+        setCategories(data.data || []);
       } catch (error) {
         console.error('Failed to fetch categories:', error);
+        setCategories([]);
       } finally {
         setLoading(false);
       }

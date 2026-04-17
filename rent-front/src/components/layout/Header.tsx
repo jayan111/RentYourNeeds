@@ -1,17 +1,42 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingCart, User, Search, Menu, X } from 'lucide-react';
-import { useSelector } from 'react-redux';
+import { ShoppingCart, User, Search, Menu, X, LogOut, Package, CreditCard, UserCircle } from 'lucide-react';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { logout } from '@/store/slices/authSlice';
+import { useRouter } from 'next/navigation';
 
 export function Header() {
   const { itemCount } = useSelector((state: RootState) => state.cart);
-  const { isAuthenticated } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const dispatch = useDispatch();
+  const router = useRouter();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleLogout = () => {
+    dispatch(logout());
+    setShowLogoutConfirm(false);
+    setIsProfileDropdownOpen(false);
+    router.push('/');
+  };
 
   return (
     <motion.header 
@@ -72,30 +97,82 @@ export function Header() {
               </Link>
             </motion.div>
             
-            <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-              <Link href="/cart" className="relative p-2 text-gray-600 hover:text-primary-600">
-                <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
-                <AnimatePresence>
+            <div className="relative flex items-center">
+              <Link href="/cart" className="p-2 text-gray-600 hover:text-primary-600 transition-transform hover:scale-110">
+                <div className="relative">
+                  <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6" />
                   {itemCount > 0 && (
-                    <motion.span
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      exit={{ scale: 0 }}
-                      className="absolute -top-1 -right-1 bg-primary-600 text-white text-xs rounded-full w-4 h-4 sm:w-5 sm:h-5 flex items-center justify-center text-xs"
-                    >
-                      {itemCount}
-                    </motion.span>
+                    <span className="absolute -top-2 -right-2 bg-primary-600 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
+                      {itemCount > 9 ? '9' : itemCount}
+                    </span>
                   )}
-                </AnimatePresence>
+                </div>
               </Link>
-            </motion.div>
+            </div>
             
             {isAuthenticated ? (
-              <motion.div whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                <Link href="/profile" className="p-2 text-gray-600 hover:text-primary-600">
+              <div className="relative" ref={dropdownRef}>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                  className="p-2 text-gray-600 hover:text-primary-600 flex items-center space-x-1"
+                >
                   <User className="w-5 h-5 sm:w-6 sm:h-6" />
-                </Link>
-              </motion.div>
+                  {user?.name && (
+                    <span className="hidden sm:block text-sm font-medium">
+                      {user.name.split(' ')[0]}
+                    </span>
+                  )}
+                </motion.button>
+                
+                <AnimatePresence>
+                  {isProfileDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border border-gray-200 py-1 z-50"
+                    >
+                      <Link
+                        href="/profile"
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      >
+                        <UserCircle className="w-4 h-4 mr-3" />
+                        My Profile
+                      </Link>
+                      <Link
+                        href="/profile/subscriptions"
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      >
+                        <CreditCard className="w-4 h-4 mr-3" />
+                        Subscriptions
+                      </Link>
+                      <Link
+                        href="/profile/orders"
+                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        onClick={() => setIsProfileDropdownOpen(false)}
+                      >
+                        <Package className="w-4 h-4 mr-3" />
+                        Orders & Returns
+                      </Link>
+                      <hr className="my-1" />
+                      <button
+                        onClick={() => {
+                          setIsProfileDropdownOpen(false);
+                          setShowLogoutConfirm(true);
+                        }}
+                        className="flex items-center w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <LogOut className="w-4 h-4 mr-3" />
+                        Logout
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             ) : (
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Link href="/auth/login" className="hidden sm:block btn-primary text-sm px-3 py-2">
@@ -169,7 +246,28 @@ export function Header() {
                       Categories
                     </Link>
                   </motion.div>
-                  {!isAuthenticated && (
+                  {isAuthenticated ? (
+                    <>
+                      <motion.div whileHover={{ x: 5 }}>
+                        <Link 
+                          href="/profile" 
+                          className="block py-2 text-gray-700 hover:text-primary-600 transition-colors"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          My Profile
+                        </Link>
+                      </motion.div>
+                      <motion.div whileHover={{ x: 5 }}>
+                        <Link 
+                          href="/profile/orders" 
+                          className="block py-2 text-gray-700 hover:text-primary-600 transition-colors"
+                          onClick={() => setIsMobileMenuOpen(false)}
+                        >
+                          Orders
+                        </Link>
+                      </motion.div>
+                    </>
+                  ) : (
                     <motion.div whileHover={{ x: 5 }}>
                       <Link 
                         href="/auth/login" 
@@ -186,6 +284,44 @@ export function Header() {
           )}
         </AnimatePresence>
       </div>
+      
+      {/* Logout Confirmation Modal */}
+      <AnimatePresence>
+        {showLogoutConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => setShowLogoutConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-lg p-6 max-w-sm mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold mb-4">Confirm Logout</h3>
+              <p className="text-gray-600 mb-6">Are you sure you want to logout?</p>
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                >
+                  Logout
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.header>
   );
 }

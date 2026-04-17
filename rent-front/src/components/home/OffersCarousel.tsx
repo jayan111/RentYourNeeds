@@ -24,11 +24,20 @@ export function OffersCarousel() {
   useEffect(() => {
     const fetchOffers = async () => {
       try {
-        const response = await fetch('http://localhost:8000/api/content/home');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+        const response = await fetch(`${apiUrl}/content/home`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
         const data = await response.json();
         setOffers(data.data.offers || []);
       } catch (error) {
         console.error('Failed to fetch offers:', error);
+        setOffers([]);
       } finally {
         setLoading(false);
       }
@@ -38,6 +47,8 @@ export function OffersCarousel() {
   }, []);
 
   useEffect(() => {
+    if (offers.length === 0) return;
+    
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % offers.length);
     }, 5000);

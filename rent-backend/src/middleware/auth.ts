@@ -15,9 +15,12 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { 
+    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret';
+
+    const decoded = jwt.verify(token, jwtSecret) as { 
       userId: string; 
-      email: string; 
+      email: string;
+      role: string;
       iat?: number; 
       exp?: number; 
     };
@@ -32,7 +35,8 @@ export const authenticateToken = async (req: AuthenticatedRequest, res: Response
     req.user = {
       id: decoded.userId,
       email: decoded.email,
-      role: 'user'
+      name: decoded.email.split('@')[0], // Add name for compatibility
+      role: decoded.role || 'user'
     };
     
     next();
@@ -80,13 +84,14 @@ export const optionalAuth = async (req: AuthenticatedRequest, res: Response, nex
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as { 
       userId: string; 
-      email: string; 
+      email: string;
+      role: string;
     };
     
     req.user = {
       id: decoded.userId,
       email: decoded.email,
-      role: 'user'
+      role: decoded.role || 'user'
     };
   } catch (error) {
     req.user = undefined;

@@ -22,7 +22,7 @@ class ApiClient {
     };
 
     // Add auth token if available
-    const token = localStorage.getItem('adminToken');
+    const token = localStorage.getItem('token');
     if (token) {
       config.headers = {
         ...config.headers,
@@ -123,7 +123,7 @@ class ApiClient {
   }
 
   async logout() {
-    localStorage.removeItem('adminToken');
+    localStorage.removeItem('token');
     return Promise.resolve();
   }
 }

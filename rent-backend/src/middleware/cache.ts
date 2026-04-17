@@ -1,8 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import { redis, getCacheKey, CACHE_TTL } from '../config/redis';
+import { redis, getCacheKey, CACHE_TTL, isRedisConnected } from '../config/redis';
 
 export const cacheMiddleware = (ttl: number, keyGenerator: (req: Request) => string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
+    if (!isRedisConnected) {
+      return next();
+    }
+
     try {
       const cacheKey = keyGenerator(req);
       const cachedData = await redis.get(cacheKey);
@@ -11,21 +15,15 @@ export const cacheMiddleware = (ttl: number, keyGenerator: (req: Request) => str
         return res.json(JSON.parse(cachedData));
       }
 
-      // Store original json method
       const originalJson = res.json;
       
-      // Override json method to cache response
       res.json = function(data: any) {
-        // Cache the response
-        redis.setex(cacheKey, ttl, JSON.stringify(data)).catch(console.error);
-        
-        // Call original json method
+        redis.setex(cacheKey, ttl, JSON.stringify(data)).catch(() => {});
         return originalJson.call(this, data);
       };
 
       next();
     } catch (error) {
-      console.error('Cache middleware error:', error);
       next();
     }
   };
@@ -52,28 +50,35 @@ export const cacheDashboard = cacheMiddleware(
   () => getCacheKey.dashboard()
 );
 
-// Cache invalidation helpers
 export const invalidateCache = {
   products: async () => {
-    const keys = await redis.keys('products:*');
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
+    if (!isRedisConnected) return;
+    try {
+      const keys = await redis.keys('products:*');
+      if (keys.length > 0) await redis.del(...keys);
+    } catch (e) {}
   },
   
   product: async (id: string) => {
-    await redis.del(getCacheKey.product(id));
-    await invalidateCache.products();
+    if (!isRedisConnected) return;
+    try {
+      await redis.del(getCacheKey.product(id));
+      await invalidateCache.products();
+    } catch (e) {}
   },
   
   inventory: async () => {
-    const keys = await redis.keys('inventory:*');
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
+    if (!isRedisConnected) return;
+    try {
+      const keys = await redis.keys('inventory:*');
+      if (keys.length > 0) await redis.del(...keys);
+    } catch (e) {}
   },
   
   dashboard: async () => {
-    await redis.del(getCacheKey.dashboard());
+    if (!isRedisConnected) return;
+    try {
+      await redis.del(getCacheKey.dashboard());
+    } catch (e) {}
   }
 };

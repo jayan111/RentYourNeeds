@@ -36,17 +36,25 @@ export default function ProductsPage() {
     price: 0,
     category: '',
     stock: 0,
-    images: [],
+    images: [] as string[],
     condition: 'Excellent',
     location: 'Mumbai'
   });
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace('/api', '');
+  const imageUrl = (img: string) => (!img ? '' : img.startsWith('http') ? img : `${API_BASE}/${img.replace(/^\/+/, '')}`);
 
   const statusOptions = ['all', 'available', 'rented', 'maintenance', 'retired'];
-  const categoryOptions = ['all', 'electronics', 'photography', 'furniture', 'appliances', 'sports', 'books'];
+  const categoryOptions = ['all', 'electronics', 'photography', 'furniture', 'vehicles'];
 
   useEffect(() => {
     fetchProducts();
   }, [selectedStatus, selectedCategory, searchTerm]);
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
   const fetchProducts = async () => {
     try {
@@ -55,12 +63,16 @@ export default function ProductsPage() {
         page: '1',
         limit: '50'
       });
-      
+
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
       if (selectedCategory !== 'all') params.append('category', selectedCategory);
       if (searchTerm) params.append('search', searchTerm);
-      
-      const response = await fetch(`/api/products?${params}`);
+
+      const response = await fetch(`${apiUrl}/admin/products?${params}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       const data = await response.json();
       setProducts(data.data || []);
     } catch (error) {
@@ -70,22 +82,56 @@ export default function ProductsPage() {
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setImageFiles(prev => [...prev, ...files]);
+    
+    // Create preview URLs
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImageUrls(prev => [...prev, e.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImageUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await fetch('/api/products', {
+      const formData = new FormData();
+      formData.append('name', newProduct.name);
+      formData.append('description', newProduct.description);
+      formData.append('price', newProduct.price.toString());
+      formData.append('category', newProduct.category);
+      formData.append('stock', newProduct.stock.toString());
+      formData.append('condition', newProduct.condition);
+      formData.append('location', newProduct.location);
+      
+      // Add image files
+      imageFiles.forEach((file, index) => {
+        formData.append(`images`, file);
+      });
+
+      const response = await fetch(`${apiUrl}/admin/products`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(newProduct)
+        body: formData
       });
 
       if (response.ok) {
         fetchProducts();
         setIsAddModalOpen(false);
         setNewProduct({ name: '', description: '', price: 0, category: '', stock: 0, images: [], condition: 'Excellent', location: 'Mumbai' });
+        setImageFiles([]);
+        setImageUrls([]);
       }
     } catch (error) {
       console.error('Failed to add product:', error);
@@ -97,11 +143,11 @@ export default function ProductsPage() {
     if (!editingProduct) return;
 
     try {
-      const response = await fetch(`/api/products/${editingProduct.id}`, {
+      const response = await fetch(`${apiUrl}/admin/products/${editingProduct.id}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify(editingProduct)
       });
@@ -120,10 +166,10 @@ export default function ProductsPage() {
     if (!confirm('Are you sure you want to delete this product?')) return;
 
     try {
-      const response = await fetch(`/api/products/${productId}`, {
+      const response = await fetch(`${apiUrl}/admin/products/${productId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
 
@@ -137,13 +183,13 @@ export default function ProductsPage() {
 
   const handleStatusUpdate = async (productId: string, newStatus: string) => {
     try {
-      const response = await fetch(`/api/products/${productId}`, {
+      const response = await fetch(`${apiUrl}/admin/products/${productId}`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({ status: newStatus })
+        body: JSON.stringify({ availability: newStatus })
       });
 
       if (response.ok) {
@@ -155,8 +201,40 @@ export default function ProductsPage() {
   };
 
   const openEditModal = (product: Product) => {
-    setEditingProduct(product);
+    setEditingProduct({ ...product, images: product.images?.length ? [...product.images] : [] });
     setIsEditModalOpen(true);
+  };
+
+  const removeEditImage = (index: number) => {
+    if (!editingProduct) return;
+    const next = editingProduct.images?.filter((_, i) => i !== index) ?? [];
+    setEditingProduct({ ...editingProduct, images: next });
+  };
+
+  const handleEditImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length || !editingProduct) return;
+    setUploadingImage(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('image', file);
+        const res = await fetch(`${API_BASE}/api/admin/upload-image`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          body: fd,
+        });
+        const data = await res.json();
+        if (res.ok && data.url) {
+          setEditingProduct((p) => p ? { ...p, images: [...(p.images || []), data.url] } : null);
+        }
+      }
+    } catch (err) {
+      console.error('Upload image failed:', err);
+    } finally {
+      setUploadingImage(false);
+      (e.target as HTMLInputElement).value = '';
+    }
   };
 
   return (
@@ -235,9 +313,21 @@ export default function ProductsPage() {
               {products.map((product) => (
                 <TableRow key={product.id}>
                   <TableCell>
-                    <div>
-                      <div className="font-medium">{product.name}</div>
-                      <div className="text-gray-500 text-sm truncate max-w-xs">{product.description}</div>
+                    <div className="flex items-center space-x-3">
+                      {product.images && product.images.length > 0 && (
+                        <img
+                          src={imageUrl(product.images[0])}
+                          alt={product.name}
+                          className="w-12 h-12 object-cover rounded"
+                          onError={(e) => {
+                            e.currentTarget.src = 'https://via.placeholder.com/48x48?text=No+Image';
+                          }}
+                        />
+                      )}
+                      <div>
+                        <div className="font-medium">{product.name}</div>
+                        <div className="text-gray-500 text-sm truncate max-w-xs">{product.description}</div>
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>{product.category}</TableCell>
@@ -354,6 +444,36 @@ export default function ProductsPage() {
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Product Images</label>
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {imageUrls.length > 0 && (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {imageUrls.map((url, index) => (
+                  <div key={index} className="relative">
+                    <img
+                      src={url}
+                      alt={`Preview ${index + 1}`}
+                      className="w-full h-20 object-cover rounded border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" variant="secondary" onClick={() => setIsAddModalOpen(false)}>Cancel</Button>
             <Button type="submit">Add Product</Button>
@@ -445,6 +565,41 @@ export default function ProductsPage() {
                 onChange={(e) => setEditingProduct({...editingProduct, description: e.target.value})}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Product Images</label>
+              {(editingProduct.images?.length ?? 0) > 0 && (
+                <div className="mb-3 grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {editingProduct.images.map((src, index) => (
+                    <div key={index} className="relative group">
+                      <img
+                        src={imageUrl(src)}
+                        alt={`${editingProduct.name} ${index + 1}`}
+                        className="w-full h-20 object-cover rounded border"
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://via.placeholder.com/80x80?text=No+Image';
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeEditImage(index)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-opacity"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleEditImageUpload}
+                disabled={uploadingImage}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {uploadingImage && <p className="mt-1 text-sm text-gray-500">Uploading…</p>}
             </div>
             <div className="flex justify-end space-x-3 pt-4">
               <Button type="button" variant="secondary" onClick={() => setIsEditModalOpen(false)}>Cancel</Button>

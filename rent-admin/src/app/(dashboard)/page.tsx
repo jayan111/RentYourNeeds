@@ -45,7 +45,7 @@ export default function DashboardPage() {
       setLoading(true);
       const response = await fetch('/api/admin/stats', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
       const data = await response.json();

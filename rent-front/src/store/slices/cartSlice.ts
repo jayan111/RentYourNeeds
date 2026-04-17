@@ -77,9 +77,8 @@ const cartSlice = createSlice({
     calculateTotals: (state) => {
       state.total = state.items.reduce((sum, item) => {
         if (item.tenureMonths) {
-          // For subscription: price per day * 30 days * months * quantity
-          const monthlyPrice = item.price * 30;
-          return sum + (monthlyPrice * item.tenureMonths * item.quantity);
+          // For subscription: price per month * months * quantity
+          return sum + (item.price * item.tenureMonths * item.quantity);
         } else {
           // For regular rental: price per day * days * quantity
           const rentalDays = item.rentalDays || 1;
@@ -92,8 +91,9 @@ const cartSlice = createSlice({
     loadCart: (state) => {
       const loaded = loadCartFromStorage();
       state.items = loaded.items;
-      state.total = loaded.total;
       state.itemCount = loaded.itemCount;
+      // Always recalculate totals from items to ensure correctness
+      cartSlice.caseReducers.calculateTotals(state);
     },
   },
 });

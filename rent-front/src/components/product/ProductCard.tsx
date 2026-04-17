@@ -2,8 +2,9 @@
 
 import { Product } from '@/types';
 import { Star, MapPin, Heart } from 'lucide-react';
-import { ImageCarousel } from '@/components/ui/ImageCarousel';
+import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { ScaleIn } from '@/components/ui/MotionComponents';
@@ -16,6 +17,8 @@ interface ProductCardProps {
 
 export function ProductCard({ product, viewMode = 'grid', className }: ProductCardProps) {
   const isListView = viewMode === 'list';
+  const imageUrl = product.images?.[0];
+  const router = useRouter();
 
   return (
     <ScaleIn>
@@ -29,14 +32,22 @@ export function ProductCard({ product, viewMode = 'grid', className }: ProductCa
         )}
       >
         <div className={cn(
-          'relative overflow-hidden',
-          isListView ? 'w-48 flex-shrink-0' : 'aspect-[4/3]'
+          'relative overflow-hidden bg-gray-100',
+          isListView ? 'w-48 flex-shrink-0 aspect-[4/3]' : 'aspect-[4/3]'
         )}>
-          <ImageCarousel 
-            images={product.images} 
-            alt={product.name}
-            className="w-full h-full"
-          />
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt={product.name}
+              fill
+              sizes={isListView ? '192px' : '(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw'}
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-gray-400 text-sm">No image</span>
+            </div>
+          )}
           
           <motion.button
             whileHover={{ scale: 1.1 }}
@@ -109,6 +120,7 @@ export function ProductCard({ product, viewMode = 'grid', className }: ProductCa
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
+              onClick={() => router.push(`/products/${product.id}`)}
               className={cn(
                 'bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors',
                 isListView ? 'px-6 py-2' : 'px-4 py-2 text-sm'

@@ -3,38 +3,39 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { AuthenticatedRequest } from '../types';
-import { createAdminUser, createTestUser } from '../utils/seedAdmin';
+import { getDB } from '../config/database';
+import { RowDataPacket } from 'mysql2';
 
-interface User {
+interface UserRow extends RowDataPacket {
   id: string;
   email: string;
   password: string;
   name: string;
+  phone: string;
   role: 'user' | 'admin';
-  resetToken?: string;
-  resetTokenExpiry?: Date;
+  address: string;
+  is_active: boolean;
+  reset_token?: string;
+  reset_token_expiry?: Date;
+  refresh_token?: string;
   created_at: Date;
+  updated_at: Date;
 }
 
-let mockUsers: User[] = [];
-
-// Initialize users on startup
-const initializeUsers = async () => {
-  if (mockUsers.length === 0) {
-    const admin = await createAdminUser();
-    const user = await createTestUser();
-    mockUsers = [admin, user];
-  }
-};
-
-initializeUsers();
-
-const generateToken = (userId: string, email: string, role: string) => {
-  return jwt.sign(
+const generateTokens = (userId: string, email: string, role: string) => {
+  const accessToken = jwt.sign(
     { userId, email, role },
     process.env.JWT_SECRET || 'fallback-secret',
-    { expiresIn: '24h' }
+    { expiresIn: '15m' }
   );
+  
+  const refreshToken = jwt.sign(
+    { userId, email, role, type: 'refresh' },
+    process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret',
+    { expiresIn: '7d' }
+  );
+  
+  return { accessToken, refreshToken };
 };
 
 export const login = async (req: AuthenticatedRequest, res: Response) => {
@@ -45,27 +46,46 @@ export const login = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    const user = mockUsers.find(u => u.email === email);
-    if (!user) {
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT * FROM users WHERE email = ? AND is_active = TRUE',
+      [email]
+    );
+
+    if (!users || users.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    const user = users[0];
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const token = generateToken(user.id, user.email, user.role);
+    const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
+
+    // Store refresh token in database
+    await db.query(
+      'UPDATE users SET refresh_token = ? WHERE id = ?',
+      [refreshToken, user.id]
+    );
 
     res.json({
       message: 'Login successful',
       data: {
-        token,
+        accessToken,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: user.role
+          phone: user.phone,
+          role: user.role,
+          address: user.address ? JSON.parse(user.address) : null
         }
       }
     });
@@ -77,45 +97,209 @@ export const login = async (req: AuthenticatedRequest, res: Response) => {
 
 export const register = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone, address } = req.body;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: 'Name, email and password are required' });
     }
 
-    const existingUser = mockUsers.find(u => u.email === email);
-    if (existingUser) {
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    const [existingUsers] = await db.query<UserRow[]>(
+      'SELECT id FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (existingUsers && existingUsers.length > 0) {
       return res.status(409).json({ message: 'User already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser: User = {
-      id: `user_${Date.now()}`,
-      email,
-      password: hashedPassword,
-      name,
-      role: 'user',
-      created_at: new Date()
-    };
+    const userId = `user_${Date.now()}`;
+    const { accessToken, refreshToken } = generateTokens(userId, email, 'user');
 
-    mockUsers.push(newUser);
-
-    const token = generateToken(newUser.id, newUser.email, newUser.role);
+    await db.query(
+      `INSERT INTO users (id, name, email, phone, password, address, refresh_token) 
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        name,
+        email,
+        phone || null,
+        hashedPassword,
+        address ? JSON.stringify(address) : null,
+        refreshToken
+      ]
+    );
 
     res.status(201).json({
       message: 'Registration successful',
       data: {
-        token,
+        accessToken,
+        refreshToken,
         user: {
-          id: newUser.id,
-          email: newUser.email,
-          name: newUser.name,
-          role: newUser.role
+          id: userId,
+          email,
+          name,
+          phone,
+          role: 'user',
+          address
         }
       }
     });
   } catch (error) {
     console.error('Registration error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const refreshToken = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    try {
+      const decoded = jwt.verify(
+        refreshToken,
+        process.env.JWT_REFRESH_SECRET || 'fallback-refresh-secret'
+      ) as any;
+
+      if (decoded.type !== 'refresh') {
+        return res.status(401).json({ message: 'Invalid token type' });
+      }
+
+      const [users] = await db.query<UserRow[]>(
+        'SELECT * FROM users WHERE id = ? AND refresh_token = ? AND is_active = TRUE',
+        [decoded.userId, refreshToken]
+      );
+
+      if (!users || users.length === 0) {
+        return res.status(401).json({ message: 'Invalid refresh token' });
+      }
+
+      const user = users[0];
+      const { accessToken, refreshToken: newRefreshToken } = generateTokens(
+        user.id,
+        user.email,
+        user.role
+      );
+
+      // Update refresh token in database
+      await db.query(
+        'UPDATE users SET refresh_token = ? WHERE id = ?',
+        [newRefreshToken, user.id]
+      );
+
+      res.json({
+        message: 'Token refreshed successfully',
+        data: {
+          accessToken,
+          refreshToken: newRefreshToken
+        }
+      });
+    } catch (jwtError) {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const logout = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+
+    if (userId) {
+      const db = await getDB();
+      if (db) {
+        await db.query(
+          'UPDATE users SET refresh_token = NULL WHERE id = ?',
+          [userId]
+        );
+      }
+    }
+
+    res.json({ message: 'Logout successful' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const updateProfile = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { name, phone, address } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    const updateFields = [];
+    const values = [];
+
+    if (name) {
+      updateFields.push('name = ?');
+      values.push(name);
+    }
+    if (phone) {
+      updateFields.push('phone = ?');
+      values.push(phone);
+    }
+    if (address) {
+      updateFields.push('address = ?');
+      values.push(JSON.stringify(address));
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No valid fields to update' });
+    }
+
+    values.push(userId);
+
+    await db.query(
+      `UPDATE users SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`,
+      values
+    );
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT id, name, email, phone, role, address FROM users WHERE id = ?',
+      [userId]
+    );
+
+    const user = users[0];
+    res.json({
+      message: 'Profile updated successfully',
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          phone: user.phone,
+          role: user.role,
+          address: user.address ? JSON.parse(user.address) : null
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -128,27 +312,33 @@ export const forgotPassword = async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ message: 'Email is required' });
     }
 
-    const user = mockUsers.find(u => u.email === email);
-    if (!user) {
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT * FROM users WHERE email = ? AND is_active = TRUE',
+      [email]
+    );
+
+    if (!users || users.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
-    user.resetToken = resetToken;
-    user.resetTokenExpiry = resetTokenExpiry;
+    await db.query(
+      'UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE email = ?',
+      [resetToken, resetTokenExpiry, email]
+    );
 
-    // Mock email sending
     console.log(`Password reset email sent to ${email}`);
     console.log(`Reset link: http://localhost:3000/reset-password?token=${resetToken}`);
 
     res.json({
-      message: 'Password reset email sent',
-      data: {
-        resetToken, // Remove in production
-        resetLink: `http://localhost:3000/reset-password?token=${resetToken}`
-      }
+      message: 'Password reset email sent'
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -164,20 +354,26 @@ export const resetPassword = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(400).json({ message: 'Token and password are required' });
     }
 
-    const user = mockUsers.find(u => 
-      u.resetToken === token && 
-      u.resetTokenExpiry && 
-      u.resetTokenExpiry > new Date()
+    const db = await getDB();
+    if (!db) {
+      return res.status(500).json({ message: 'Database connection failed' });
+    }
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > NOW() AND is_active = TRUE',
+      [token]
     );
 
-    if (!user) {
+    if (!users || users.length === 0) {
       return res.status(400).json({ message: 'Invalid or expired reset token' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    user.password = hashedPassword;
-    user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
+
+    await db.query(
+      'UPDATE users SET password = ?, reset_token = NULL, reset_token_expiry = NULL WHERE reset_token = ?',
+      [hashedPassword, token]
+    );
 
     res.json({ message: 'Password reset successful' });
   } catch (error) {
@@ -200,6 +396,50 @@ export const verifyToken = async (req: AuthenticatedRequest, res: Response) => {
     });
   } catch (error) {
     console.error('Verify token error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const changePassword = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current and new passwords are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    }
+
+    const db = await getDB();
+    if (!db) return res.status(500).json({ message: 'Database connection failed' });
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT id, password FROM users WHERE id = ? AND is_active = TRUE',
+      [userId]
+    );
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = users[0];
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await db.query('UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?', [hashedPassword, userId]);
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (error) {
+    console.error('Change password error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
