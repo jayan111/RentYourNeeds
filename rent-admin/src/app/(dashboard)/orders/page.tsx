@@ -49,7 +49,7 @@ export default function OrdersPage() {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/admin/orders`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -86,7 +86,7 @@ export default function OrdersPage() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/admin/stats`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -99,7 +99,7 @@ export default function OrdersPage() {
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: {
@@ -193,14 +193,20 @@ export default function OrdersPage() {
                   <TableCell>{order.items.length} items</TableCell>
                   <TableCell className="font-semibold">{formatCurrency(order.totalAmount)}</TableCell>
                   <TableCell>
-                    <span className={`px-2 py-1 rounded text-xs ${
-                      order.subscriptionType === 'recurring' 
-                        ? 'bg-purple-100 text-purple-800' 
-                        : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {order.subscriptionType}
-                      {order.tenureMonths && ` (${order.tenureMonths}m)`}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      {order.tenureMonths ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                          {order.tenureMonths} Month Plan
+                        </span>
+                      ) : null}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                        order.subscriptionType === 'recurring'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {order.subscriptionType === 'recurring' ? 'Monthly Auto-pay' : 'One-time'}
+                      </span>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={order.status} />

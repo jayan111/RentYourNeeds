@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Package, Clock, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { OrderCardSkeleton } from '@/components/ui/Skeleton';
 
 interface Order {
   orderId: string;
@@ -106,35 +108,55 @@ export default function OrdersPage() {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="h-8 bg-gray-200 rounded w-48 mb-6"></div>
-        {[...Array(3)].map((_, i) => (
-          <div key={i} className="bg-white p-6 rounded-lg shadow mb-4">
-            <div className="h-6 bg-gray-200 rounded w-32 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-          </div>
-        ))}
+        <div className="animate-shimmer h-9 w-48 rounded-lg mb-8" />
+        <div className="space-y-4">
+          {[...Array(3)].map((_, i) => (
+            <OrderCardSkeleton key={i} />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">My Orders</h1>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="max-w-7xl mx-auto px-4 py-8"
+    >
+      <motion.h1
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-3xl font-bold mb-8"
+      >
+        My Orders
+      </motion.h1>
 
       {orders.length === 0 ? (
-        <div className="text-center py-16">
-          <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center py-16"
+        >
+          <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Package className="w-10 h-10 text-gray-400" />
+          </div>
           <h3 className="text-xl font-semibold mb-2">No orders yet</h3>
-          <p className="text-gray-600 mb-6">Start shopping to see your orders here</p>
+          <p className="text-gray-500 mb-6">Start shopping to see your orders here</p>
           <Link href="/products" className="btn-primary">
             Browse Products
           </Link>
-        </div>
+        </motion.div>
       ) : (
         <div className="space-y-4">
-          {orders.map((order) => (
-            <div key={order.orderId} className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
+          {orders.map((order, i) => (
+            <motion.div
+              key={order.orderId}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.06 }}
+              className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow"
+            >
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
                 <div className="flex items-center gap-3 mb-2 md:mb-0">
                   {getStatusIcon(order.status)}
@@ -191,9 +213,10 @@ export default function OrdersPage() {
                 </div>
               </div>
             </div>
+            </motion.div>
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

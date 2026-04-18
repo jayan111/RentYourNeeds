@@ -1,132 +1,75 @@
 'use client';
 
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 interface TenureSelectorProps {
   value: number;
   onChange: (months: number) => void;
+  basePrice?: number;
   className?: string;
 }
 
-const TENURE_OPTIONS = [3, 6, 12];
+const TENURE_OPTIONS = [
+  { months: 3,  label: '3 Months',  saving: null },
+  { months: 6,  label: '6 Months',  saving: 'Save 5%' },
+  { months: 12, label: '12 Months', saving: 'Save 10%' },
+  { months: 24, label: '24 Months', saving: 'Save 15%' },
+];
 
-export function TenureSelector({ value, onChange, className }: TenureSelectorProps) {
-  const currentIndex = TENURE_OPTIONS.indexOf(value);
-  const [sliderIndex, setSliderIndex] = useState(currentIndex >= 0 ? currentIndex : 0);
+export function TenureSelector({ value, onChange, basePrice, className }: TenureSelectorProps) {
+  const selected = TENURE_OPTIONS.find(t => t.months === value) ?? TENURE_OPTIONS[0];
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const index = parseInt(e.target.value);
-    setSliderIndex(index);
-    onChange(TENURE_OPTIONS[index]);
+  const discountedPrice = (months: number) => {
+    if (!basePrice) return null;
+    const discounts: Record<number, number> = { 3: 0, 6: 0.05, 12: 0.10, 24: 0.15 };
+    return Math.round(basePrice * (1 - (discounts[months] ?? 0)));
   };
 
   return (
-    <div className={cn('space-y-4', className)}>
-      <label className="block text-sm font-medium text-gray-700">
-        Choose Tenure
-      </label>
-      
-      <div className="relative px-2">
-        {/* Custom Slider Track */}
-        <div className="relative h-2 bg-gray-200 rounded-full">
-          <div 
-            className="absolute h-2 bg-primary-600 rounded-full transition-all duration-300 ease-out"
-            style={{ width: `${(sliderIndex / 2) * 100}%` }}
-          />
-        </div>
-        
-        {/* Slider Input */}
-        <input
-          type="range"
-          min="0"
-          max="2"
-          step="1"
-          value={sliderIndex}
-          onChange={handleSliderChange}
-          className="absolute top-0 w-full h-2 bg-transparent appearance-none cursor-pointer slider-input"
-        />
-        
-        {/* Slider Dots */}
-        <div className="absolute top-1/2 transform -translate-y-1/2 w-full flex justify-between px-1">
-          {TENURE_OPTIONS.map((_, index) => (
-            <div
-              key={index}
+    <div className={cn('space-y-3', className)}>
+      <label className="block text-sm font-semibold text-gray-800">Select Tenure</label>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {TENURE_OPTIONS.map((opt) => {
+          const price = discountedPrice(opt.months);
+          const isActive = value === opt.months;
+          return (
+            <button
+              key={opt.months}
+              type="button"
+              onClick={() => onChange(opt.months)}
               className={cn(
-                'w-4 h-4 rounded-full border-2 transition-all duration-200',
-                index <= sliderIndex
-                  ? 'bg-primary-600 border-primary-600 shadow-md'
-                  : 'bg-white border-gray-300'
+                'relative flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all text-sm font-medium',
+                isActive
+                  ? 'border-primary-600 bg-primary-50 text-primary-700'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-primary-300 hover:bg-primary-50/40'
               )}
-            />
-          ))}
-        </div>
-      </div>
-      
-      {/* Tenure Labels */}
-      <div className="flex justify-between px-2">
-        {TENURE_OPTIONS.map((months, index) => (
-          <button
-            key={months}
-            onClick={() => {
-              setSliderIndex(index);
-              onChange(months);
-            }}
-            className={cn(
-              'text-sm font-medium transition-all duration-200 px-2 py-1 rounded',
-              index === sliderIndex 
-                ? 'text-primary-600 bg-primary-50' 
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-            )}
-          >
-            {months} months
-          </button>
-        ))}
-      </div>
-      
-      {/* Selected Value Display */}
-      <div className="bg-gradient-to-r from-primary-50 to-blue-50 border border-primary-200 rounded-lg p-4 transition-all duration-300">
-        <div className="text-center">
-          <div className="flex items-center justify-center space-x-2">
-            <span className="text-2xl font-bold text-primary-700">
-              {TENURE_OPTIONS[sliderIndex]}
-            </span>
-            <span className="text-lg text-primary-600">months</span>
-          </div>
-          <p className="text-sm text-primary-600 mt-1">
-            Selected subscription period
-          </p>
-        </div>
+            >
+              {opt.saving && (
+                <span className={cn(
+                  'absolute -top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap',
+                  isActive ? 'bg-green-500 text-white' : 'bg-green-100 text-green-700'
+                )}>
+                  {opt.saving}
+                </span>
+              )}
+              <span className="font-bold">{opt.months} mo</span>
+              {price && (
+                <span className={cn('text-xs mt-0.5', isActive ? 'text-primary-600' : 'text-gray-500')}>
+                  ₹{price}/mo
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      <style jsx>{`
-        .slider-input::-webkit-slider-thumb {
-          appearance: none;
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: #2563eb;
-          cursor: pointer;
-          border: 3px solid #ffffff;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
-          transition: all 0.2s ease;
-        }
-        
-        .slider-input::-webkit-slider-thumb:hover {
-          transform: scale(1.1);
-          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-        }
-        
-        .slider-input::-moz-range-thumb {
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: #2563eb;
-          cursor: pointer;
-          border: 3px solid #ffffff;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
-        }
-      `}</style>
+      <div className="flex items-center justify-between bg-primary-50 border border-primary-200 rounded-lg px-4 py-2.5 text-sm">
+        <span className="text-gray-700">Selected: <span className="font-semibold text-primary-700">{selected.label}</span></span>
+        {selected.saving && (
+          <span className="text-green-600 font-semibold">{selected.saving}</span>
+        )}
+      </div>
     </div>
   );
 }

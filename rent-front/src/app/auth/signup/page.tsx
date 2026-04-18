@@ -14,6 +14,7 @@ export default function SignupPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +25,8 @@ export default function SignupPage() {
     }
     
     setLoading(true);
-    
+    setError('');
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
       const response = await fetch(`${apiUrl}/auth/register`, {
@@ -36,12 +38,16 @@ export default function SignupPage() {
           password: formData.password
         })
       });
-      
+
+      const data = await response.json();
+
       if (response.ok) {
         window.location.href = '/auth/login';
+      } else {
+        setError(data.message || 'Signup failed. Please try again.');
       }
-    } catch (error) {
-      console.error('Signup failed:', error);
+    } catch (err) {
+      setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -50,6 +56,12 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
       <div className="max-w-md w-full space-y-8 animate-fade-in">
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
+
         <div className="text-center">
           <h2 className="text-3xl font-bold text-gray-900">Create your account</h2>
           <p className="mt-2 text-gray-600">

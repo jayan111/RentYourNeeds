@@ -70,7 +70,7 @@ export default function ProductsPage() {
 
       const response = await fetch(`${apiUrl}/admin/products?${params}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
       });
       const data = await response.json();
@@ -121,7 +121,7 @@ export default function ProductsPage() {
       const response = await fetch(`${apiUrl}/admin/products`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         },
         body: formData
       });
@@ -147,7 +147,7 @@ export default function ProductsPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         },
         body: JSON.stringify(editingProduct)
       });
@@ -169,7 +169,7 @@ export default function ProductsPage() {
       const response = await fetch(`${apiUrl}/admin/products/${productId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
       });
 
@@ -187,7 +187,7 @@ export default function ProductsPage() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         },
         body: JSON.stringify({ availability: newStatus })
       });
@@ -221,7 +221,7 @@ export default function ProductsPage() {
         fd.append('image', file);
         const res = await fetch(`${API_BASE}/api/admin/upload-image`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
           body: fd,
         });
         const data = await res.json();
@@ -331,9 +331,29 @@ export default function ProductsPage() {
                     </div>
                   </TableCell>
                   <TableCell>{product.category}</TableCell>
-                  <TableCell>₹{product.price}</TableCell>
-                  <TableCell>{product.stock}</TableCell>
-                  <TableCell>{product.condition}</TableCell>
+                  <TableCell>
+                    <span className="font-semibold text-gray-900">₹{product.price}</span>
+                    <span className="text-xs text-gray-500">/mo</span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                      product.stock > 5 ? 'bg-green-100 text-green-800' :
+                      product.stock > 0 ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {product.stock} in stock
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                      product.condition === 'Excellent' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                      product.condition === 'Very Good' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                      product.condition === 'Good' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                      'bg-gray-50 text-gray-600 border-gray-200'
+                    }`}>
+                      {product.condition}
+                    </span>
+                  </TableCell>
                   <TableCell>{product.location}</TableCell>
                   <TableCell>
                     <div className="flex items-center">

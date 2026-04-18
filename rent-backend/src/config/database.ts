@@ -22,6 +22,11 @@ export const connectDB = async () => {
 };
 
 const createTables = async () => {
+  if (!connection) {
+    console.error('Cannot create tables: no database connection');
+    return;
+  }
+
   const tables = [
     // Categories table
     `CREATE TABLE IF NOT EXISTS categories (
@@ -181,7 +186,7 @@ const createTables = async () => {
   for (const table of tables) {
     await connection.execute(table);
   }
-  
+
   // Insert default categories
   await connection.execute(`
     INSERT IGNORE INTO categories (id, name, description, image) VALUES

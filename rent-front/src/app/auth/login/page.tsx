@@ -52,7 +52,9 @@ export default function LoginPage() {
       const data = await response.json();
       
       if (response.ok) {
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('accessToken', data.data.accessToken);
+        localStorage.setItem('refreshToken', data.data.refreshToken);
+        localStorage.setItem('user', JSON.stringify(data.data.user));
         window.location.href = '/';
       } else {
         setErrors({ general: data.message || 'Login failed' });

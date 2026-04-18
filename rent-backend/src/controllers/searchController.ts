@@ -42,7 +42,7 @@ export const searchProducts = async (req: Request, res: Response) => {
     );
 
     const results = productRows.map((row) => {
-      const imgs = normalizeImageUrls(parseImages(row.images), API_BASE);
+      const imgs = normalizeImageUrls(parseImages(row.images));
       return {
         id: row.id,
         name: row.name,

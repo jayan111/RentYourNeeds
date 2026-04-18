@@ -26,7 +26,7 @@ export default function UsersPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('accessToken');
         const response = await fetch(`${apiUrl}/admin/users?search=${search}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -44,7 +44,7 @@ export default function UsersPage() {
 
   const handleToggleActive = async (userId: string, currentActive: boolean) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       await fetch(`${apiUrl}/admin/users/${userId}`, {
         method: 'PATCH',
         headers: {
@@ -66,7 +66,7 @@ export default function UsersPage() {
 
   const handleKYCAction = async (userId: string, action: 'approve' | 'reject') => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       await fetch(`${apiUrl}/admin/users/${userId}/verify`, {
         method: 'PATCH',
         headers: {
@@ -206,11 +206,25 @@ export default function UsersPage() {
                     <div className="text-sm text-gray-500">{user.phone}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {user.is_active ? 'Active' : 'Blocked'}
+                    <div className="flex flex-col gap-1">
+                      {/* KYC Status */}
+                      {user.kycStatus === 'verified' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                          <CheckCircle className="w-3 h-3" /> KYC Verified
+                        </span>
+                      ) : user.kycStatus === 'rejected' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200">
+                          <XCircle className="w-3 h-3" /> KYC Rejected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 border border-yellow-200">
+                          <Clock className="w-3 h-3" /> KYC Pending
+                        </span>
+                      )}
+                      {/* Account status */}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${user.is_active ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {user.is_active ? 'Active' : 'Blocked'} &bull; {user.role}
                       </span>
-                      <span className="text-xs text-gray-500 capitalize">{user.role}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

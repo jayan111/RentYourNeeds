@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { ShoppingCart, User, Search, Menu, X, LogOut, Package, CreditCard, UserCircle } from 'lucide-react';
+import { ShoppingCart, User, Search, Menu, X, LogOut, Package, CreditCard, UserCircle, MapPin, ChevronDown, Phone } from 'lucide-react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import { useState, useRef, useEffect } from 'react';
@@ -10,12 +10,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { logout } from '@/store/slices/authSlice';
 import { useRouter } from 'next/navigation';
 
+const CITIES = ['Ahmedabad', 'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Pune', 'Chennai'];
+
 export function Header() {
   const { itemCount } = useSelector((state: RootState) => state.cart);
   const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [city, setCity] = useState('Ahmedabad');
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const cityRef = useRef<HTMLDivElement>(null);
   const dispatch = useDispatch();
   const router = useRouter();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -31,6 +36,16 @@ export function Header() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (cityRef.current && !cityRef.current.contains(event.target as Node)) {
+        setShowCityDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const handleLogout = () => {
     dispatch(logout());
     setShowLogoutConfirm(false);
@@ -39,38 +54,80 @@ export function Header() {
   };
 
   return (
-    <motion.header 
+    <motion.header
       initial={{ y: -100 }}
       animate={{ y: 0 }}
       transition={{ duration: 0.3 }}
-      className="bg-white shadow-sm border-b border-border sticky top-0 z-40"
+      className="sticky top-0 z-40"
     >
+      {/* Top info bar */}
+      <div className="bg-primary-700 text-white text-xs py-1.5 hidden sm:block">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+          <span>Free delivery & installation on all orders 🎉</span>
+          <div className="flex items-center gap-4">
+            <a href="tel:+919876543210" className="flex items-center gap-1 hover:text-primary-200 transition-colors">
+              <Phone className="w-3 h-3" /> +91 98765 43210
+            </a>
+            <Link href="/help" className="hover:text-primary-200 transition-colors">Help Center</Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Main nav */}
+      <div className="bg-white shadow-sm border-b border-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo and Mobile Menu Button */}
-          <div className="flex items-center">
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              <Link href="/" className="text-xl sm:text-2xl font-bold text-primary-600">
-                RentYourNeeds
-              </Link>
-            </motion.div>
+          {/* Logo + City */}
+          <div className="flex items-center gap-3">
+            <Link href="/" className="text-xl sm:text-2xl font-black text-primary-600 whitespace-nowrap">
+              RentYour<span className="text-gray-900">Needs</span>
+            </Link>
+
+            {/* City selector */}
+            <div className="relative hidden md:block" ref={cityRef}>
+              <button
+                onClick={() => setShowCityDropdown(!showCityDropdown)}
+                className="flex items-center gap-1 text-sm text-gray-600 hover:text-primary-600 transition-colors border border-gray-200 hover:border-primary-300 rounded-lg px-2.5 py-1.5"
+              >
+                <MapPin className="w-3.5 h-3.5 text-primary-500" />
+                <span className="font-medium">{city}</span>
+                <ChevronDown className="w-3 h-3 text-gray-400" />
+              </button>
+              <AnimatePresence>
+                {showCityDropdown && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    className="absolute top-full left-0 mt-1.5 bg-white rounded-xl shadow-xl border border-gray-100 z-50 min-w-[160px] py-1 overflow-hidden"
+                  >
+                    {CITIES.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => { setCity(c); setShowCityDropdown(false); }}
+                        className={`flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm transition-colors ${c === city ? 'bg-primary-50 text-primary-600 font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                        {c}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-6">
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Link href="/products" className="text-gray-700 hover:text-primary-600 transition-colors">
-                Products
-              </Link>
-            </motion.div>
-            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <Link href="/categories" className="text-gray-700 hover:text-primary-600 transition-colors">
-                Categories
-              </Link>
-            </motion.div>
+            <Link href="/products" className="text-gray-700 hover:text-primary-600 transition-colors font-medium text-sm">
+              Products
+            </Link>
+            <Link href="/categories" className="text-gray-700 hover:text-primary-600 transition-colors font-medium text-sm">
+              Categories
+            </Link>
+            <Link href="/products?category=packages" className="text-gray-700 hover:text-primary-600 transition-colors font-medium text-sm">
+              Packages
+            </Link>
           </nav>
           
           {/* Search Bar - Hidden on mobile */}
@@ -284,7 +341,8 @@ export function Header() {
           )}
         </AnimatePresence>
       </div>
-      
+      </div>{/* end main nav bg-white */}
+
       {/* Logout Confirmation Modal */}
       <AnimatePresence>
         {showLogoutConfirm && (

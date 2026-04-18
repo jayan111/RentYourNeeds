@@ -40,7 +40,7 @@ export default function SubscriptionsPage() {
   const fetchSubscriptions = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({ limit: '50' });
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
 
@@ -64,7 +64,7 @@ export default function SubscriptionsPage() {
 
   const handleStatusUpdate = async (subId: string, newStatus: string) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${apiUrl}/admin/subscriptions/${subId}`, {
         method: 'PATCH',
         headers: {

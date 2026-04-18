@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Star, ShoppingCart, Heart, Share2, Calendar, Shield, Truck, ArrowLeft, Tag, CheckCircle, Clock, MapPin } from 'lucide-react';
+import { Star, ShoppingCart, Heart, Share2, Shield, Truck, ArrowLeft, Tag, CheckCircle, Wrench, RotateCcw, BadgeCheck } from 'lucide-react';
 import { useDispatch } from 'react-redux';
 import { addToCart } from '@/store/slices/cartSlice';
 import { Product } from '@/types';
@@ -68,8 +68,11 @@ export default function ProductDetailPage() {
     );
   }
 
-  const monthlyPrice = product.price; // Convert daily price to monthly
+  const discounts: Record<number, number> = { 3: 0, 6: 0.05, 12: 0.10, 24: 0.15 };
+  const monthlyPrice = Math.round(product.price * (1 - (discounts[tenureMonths] ?? 0)));
   const totalPrice = monthlyPrice * tenureMonths * quantity;
+
+  const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 animate-fade-in">
@@ -139,41 +142,47 @@ export default function ProductDetailPage() {
           <p className="text-gray-700 mb-6 leading-relaxed">{product.description}</p>
 
           {/* Pricing */}
-          <div className="bg-gray-50 p-4 sm:p-6 rounded-lg mb-6">
-            <div className="flex flex-wrap items-baseline mb-2">
-              <span className="text-lg text-gray-500 line-through mr-2">{Math.round(monthlyPrice * 1.8)}</span>
-              <span className="text-2xl sm:text-3xl font-bold text-primary-600">{monthlyPrice}</span>
-              <span className="text-gray-600 ml-2 text-sm sm:text-base">/month</span>
+          <div className="bg-gray-50 p-4 sm:p-6 rounded-xl mb-4 border border-gray-200">
+            <div className="flex flex-wrap items-baseline gap-2 mb-1">
+              <span className="text-3xl sm:text-4xl font-black text-primary-600">{fmt(monthlyPrice)}</span>
+              <span className="text-gray-500 text-base">/month</span>
+              <span className="text-sm text-gray-400 line-through">{fmt(Math.round(product.price * 1.5))}</span>
             </div>
-            <p className="text-sm text-green-600 font-medium mb-4">Save {Math.round(monthlyPrice * 0.8)} per month!</p>
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-              <TenureSelector
-                value={tenureMonths}
-                onChange={setTenureMonths}
-                className="sm:col-span-2"
-              />
-              <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Quantity
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max={product.stock}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, Math.min(product.stock, parseInt(e.target.value) || 1)))}
-                  className="w-full p-2 sm:p-3 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm sm:text-base"
-                />
+            <p className="text-xs text-green-600 font-medium mb-5">
+              Total for {tenureMonths} months: <span className="font-bold">{fmt(totalPrice)}</span>
+            </p>
+
+            <TenureSelector
+              value={tenureMonths}
+              onChange={setTenureMonths}
+              basePrice={product.price}
+              className="mb-4"
+            />
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Quantity</label>
+              <div className="flex items-center gap-3">
+                <button onClick={() => setQuantity(q => Math.max(1, q - 1))} className="w-9 h-9 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-100 font-bold text-lg">−</button>
+                <span className="w-8 text-center font-semibold">{quantity}</span>
+                <button onClick={() => setQuantity(q => Math.min(product.stock, q + 1))} className="w-9 h-9 rounded-lg border border-gray-300 flex items-center justify-center hover:bg-gray-100 font-bold text-lg">+</button>
+                <span className="text-xs text-gray-500">{product.stock} available</span>
               </div>
             </div>
-            
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center text-base sm:text-lg font-semibold">
-                <span>Total:</span>
-                <span className="text-primary-600 text-lg sm:text-xl">{totalPrice}</span>
+          </div>
+
+          {/* Trust badges */}
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[
+              { icon: Truck,    label: 'Free Delivery & Installation' },
+              { icon: Wrench,   label: 'Free Maintenance' },
+              { icon: RotateCcw, label: 'Easy Relocation' },
+              { icon: BadgeCheck, label: 'Zero Security Deposit' },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label} className="flex items-center gap-2 bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-xs font-medium text-green-800">
+                <Icon className="w-4 h-4 text-green-600 flex-shrink-0" />
+                {label}
               </div>
-            </div>
+            ))}
           </div>
 
           {/* Add to Cart */}
@@ -220,30 +229,24 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          {/* Features */}
-          <div className="grid grid-cols-3 gap-4 mt-8 pt-8 border-t">
-            <div className="text-center">
-              <Calendar className="w-8 h-8 text-primary-600 mx-auto mb-2" />
-              <h4 className="font-medium text-sm">Flexible Rental</h4>
-              <p className="text-xs text-gray-600">Choose your dates</p>
+          {/* Why Rent Instead of Buy */}
+          <div className="mt-6 pt-6 border-t">
+            <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <Shield className="w-4 h-4 text-primary-600" /> Why Rent Instead of Buy?
+            </h3>
+            <div className="space-y-2">
+              {[
+                'No upfront cost — pay only ₹' + monthlyPrice + '/mo',
+                'Upgrade anytime when better models arrive',
+                'Free repairs & maintenance throughout tenure',
+                'Return hassle-free at end of tenure',
+              ].map(point => (
+                <div key={point} className="flex items-start gap-2 text-sm text-gray-600">
+                  <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                  {point}
+                </div>
+              ))}
             </div>
-            <div className="text-center">
-              <Shield className="w-8 h-8 text-primary-600 mx-auto mb-2" />
-              <h4 className="font-medium text-sm">Insured</h4>
-              <p className="text-xs text-gray-600">Full coverage</p>
-            </div>
-            <div className="text-center">
-              <Truck className="w-8 h-8 text-primary-600 mx-auto mb-2" />
-              <h4 className="font-medium text-sm">Free Delivery</h4>
-              <p className="text-xs text-gray-600">Within 10 miles</p>
-            </div>
-          </div>
-
-          {/* Stock Info */}
-          <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-green-800 text-sm">
-              <span className="font-medium">{product.stock} items</span> available for rent
-            </p>
           </div>
         </div>
       </div>

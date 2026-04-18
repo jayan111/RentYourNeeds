@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Mail, Phone, MapPin } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
@@ -17,7 +18,12 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8 sm:py-16">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="max-w-6xl mx-auto px-4 py-8 sm:py-16"
+    >
       <div className="text-center mb-12">
         <h1 className="text-3xl sm:text-4xl font-bold mb-4">Contact Us</h1>
         <p className="text-lg text-gray-600">Get in touch with our team</p>
@@ -106,6 +112,6 @@ export default function ContactPage() {
           </form>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

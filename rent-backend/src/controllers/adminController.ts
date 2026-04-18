@@ -15,6 +15,7 @@ export const getDashboardStats = async (req: AuthenticatedRequest, res: Response
           COALESCE(SUM(CASE WHEN payment_status='paid' AND created_at >= DATE_FORMAT(NOW(),'%Y-%m-01') THEN total_amount ELSE 0 END), 0) as monthlyRevenue,
           COALESCE(SUM(CASE WHEN payment_status='paid' AND created_at >= DATE_SUB(DATE_FORMAT(NOW(),'%Y-%m-01'), INTERVAL 3 MONTH) THEN total_amount ELSE 0 END), 0) as quarterlyRevenue
          FROM orders`
+
       ),
       db.query<RowDataPacket[]>(
         `SELECT status, COUNT(*) as count FROM subscriptions GROUP BY status`

@@ -4,6 +4,8 @@ export interface User {
   name: string;
   avatar?: string;
   role: 'user' | 'admin';
+  phone?: string;
+  address?: Address;
 }
 
 export interface Product {
@@ -16,6 +18,8 @@ export interface Product {
   stock: number;
   rating: number;
   reviews: number;
+  condition?: string;
+  location?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,7 +49,7 @@ export interface Address {
   street: string;
   city: string;
   state: string;
-  zipCode: string;
+  pincode: string;
   country: string;
 }
 

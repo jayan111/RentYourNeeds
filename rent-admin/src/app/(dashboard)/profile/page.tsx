@@ -50,7 +50,7 @@ export default function ProfilePage() {
     setMessage(null);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${apiUrl}/auth/profile`, {
         method: 'PUT',
         headers: {
@@ -93,7 +93,7 @@ export default function ProfilePage() {
 
     setSaving(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('accessToken');
       const response = await fetch(`${apiUrl}/auth/change-password`, {
         method: 'POST',
         headers: {

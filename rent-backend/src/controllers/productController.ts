@@ -122,6 +122,7 @@ export const getProducts = async (req: Request, res: Response) => {
         reviews: product.reviews,
         images: parsedImages,
         condition: product.condition_type,
+        condition_type: product.condition_type,
         location: product.location,
         availability: product.availability,
         subscriptionDurations: parsedSubscriptionDurations,
@@ -129,7 +130,7 @@ export const getProducts = async (req: Request, res: Response) => {
         updated_at: product.updated_at
       };
     });
-    
+
     const totalPages = Math.ceil(total / limitNum);
     const hasMore = pageNum < totalPages;
     
@@ -186,13 +187,14 @@ export const getProductById = async (req: Request, res: Response) => {
       reviews: product.reviews,
       images: parsedImages,
       condition: product.condition_type,
+      condition_type: product.condition_type,
       location: product.location,
       availability: product.availability,
       subscriptionDurations: parsedSubscriptionDurations,
       created_at: product.created_at,
       updated_at: product.updated_at
     };
-    
+
     res.json({ data: formattedProduct });
   } catch (error) {
     console.error('Get product error:', error);

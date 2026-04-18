@@ -96,7 +96,7 @@ app.use('*', (req, res) => {
 const startServer = async () => {
   try {
     await connectDB();
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    const server = app.listen(Number(PORT), '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Local: http://localhost:${PORT}`);
       console.log(`Network: http://192.168.1.35:${PORT}`);

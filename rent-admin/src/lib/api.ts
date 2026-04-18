@@ -22,7 +22,7 @@ class ApiClient {
     };
 
     // Add auth token if available
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('accessToken');
     if (token) {
       config.headers = {
         ...config.headers,

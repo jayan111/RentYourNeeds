@@ -17,7 +17,9 @@ export function useAuth() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token');
+      if (typeof window === 'undefined') return;
+
+      const token = localStorage.getItem('accessToken');
       const userData = localStorage.getItem('user');
 
       if (!token || !userData) {

@@ -32,8 +32,15 @@ interface DashboardStats {
   };
 }
 
+const defaultStats: DashboardStats = {
+  revenue: { monthly: 0, quarterly: 0, yearly: 0, growth: 0 },
+  subscriptions: { active: 0, paused: 0, cancelled: 0, total: 0 },
+  inventory: { total: 0, available: 0, rented: 0, maintenance: 0, retired: 0 },
+  users: { total: 0, verified: 0, pending: 0, rejected: 0 },
+};
+
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -45,11 +52,18 @@ export default function DashboardPage() {
       setLoading(true);
       const response = await fetch('/api/admin/stats', {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
         }
       });
       const data = await response.json();
-      setStats(data.data);
+      if (data.data) {
+        setStats({
+          revenue: { ...defaultStats.revenue, ...data.data.revenue },
+          subscriptions: { ...defaultStats.subscriptions, ...data.data.subscriptions },
+          inventory: { ...defaultStats.inventory, ...data.data.inventory },
+          users: { ...defaultStats.users, ...data.data.users },
+        });
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);
     } finally {
@@ -59,10 +73,6 @@ export default function DashboardPage() {
 
   if (loading) {
     return <div className="p-6 text-center">Loading dashboard...</div>;
-  }
-
-  if (!stats) {
-    return <div className="p-6 text-center text-red-600">Failed to load dashboard data</div>;
   }
 
   const formatCurrency = (amount: number) => {
@@ -78,6 +88,30 @@ export default function DashboardPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
         <Button onClick={fetchDashboardStats}>Refresh Data</Button>
+      </div>
+
+      {/* Quick Stats KPI Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="rounded-xl p-4 bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow">
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Monthly Revenue</p>
+          <p className="text-2xl font-bold mt-1">{formatCurrency(stats.revenue.monthly)}</p>
+          <p className="text-xs mt-1 opacity-80">+{stats.revenue.growth}% vs last month</p>
+        </div>
+        <div className="rounded-xl p-4 bg-gradient-to-br from-green-500 to-green-700 text-white shadow">
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Active Rentals</p>
+          <p className="text-2xl font-bold mt-1">{stats.subscriptions.active.toLocaleString()}</p>
+          <p className="text-xs mt-1 opacity-80">{stats.subscriptions.total.toLocaleString()} total</p>
+        </div>
+        <div className="rounded-xl p-4 bg-gradient-to-br from-purple-500 to-purple-700 text-white shadow">
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-80">KYC Pending</p>
+          <p className="text-2xl font-bold mt-1">{stats.users.pending.toLocaleString()}</p>
+          <p className="text-xs mt-1 opacity-80">{stats.users.verified.toLocaleString()} verified</p>
+        </div>
+        <div className="rounded-xl p-4 bg-gradient-to-br from-orange-500 to-orange-700 text-white shadow">
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-80">Items Available</p>
+          <p className="text-2xl font-bold mt-1">{stats.inventory.available.toLocaleString()}</p>
+          <p className="text-xs mt-1 opacity-80">{stats.inventory.rented.toLocaleString()} rented out</p>
+        </div>
       </div>
 
       {/* Revenue Cards */}
