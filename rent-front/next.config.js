@@ -1,26 +1,30 @@
 /** @type {import('next').NextConfig} */
+
+// Derive the backend hostname from NEXT_PUBLIC_API_URL for image domains
+const backendOrigin = (() => {
+  const raw = process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, '') || '';
+  try { return new URL(raw); } catch { return null; }
+})();
+
 const nextConfig = {
   images: {
-    domains: ['localhost', '127.0.0.1', 'your-s3-bucket.s3.amazonaws.com', 'images.unsplash.com'],
     remotePatterns: [
+      // Local development
       { protocol: 'http', hostname: 'localhost', port: '8000', pathname: '/uploads/**' },
       { protocol: 'http', hostname: '127.0.0.1', port: '8000', pathname: '/uploads/**' },
+      // Production backend (derived from NEXT_PUBLIC_API_URL at build time)
+      ...(backendOrigin
+        ? [{
+            protocol: backendOrigin.protocol.replace(':', ''),
+            hostname: backendOrigin.hostname,
+            ...(backendOrigin.port ? { port: backendOrigin.port } : {}),
+            pathname: '/uploads/**',
+          }]
+        : []),
+      // Unsplash (used for placeholder product images)
+      { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
-  env: {
-    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
-    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
-  },
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*',
-      },
-    ];
-  },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
