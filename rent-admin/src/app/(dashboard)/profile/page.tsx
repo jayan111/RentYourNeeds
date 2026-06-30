@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { User, Mail, Phone, Lock, Save, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
+import { validators, FormErrors, clearError } from '@/lib/validation';
 
 interface AdminProfile {
   id: string;
@@ -20,7 +22,9 @@ export default function ProfilePage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' });
+  const [profileErrors, setProfileErrors] = useState<FormErrors>({});
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordErrors, setPasswordErrors] = useState<FormErrors>({});
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -46,17 +50,20 @@ export default function ProfilePage() {
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    const errs: FormErrors = {
+      name: validators.minLength(profileForm.name, 2, 'Name'),
+      phone: profileForm.phone ? validators.phone(profileForm.phone) : '',
+    };
+    if (Object.values(errs).some(Boolean)) { setProfileErrors(errs); return; }
+    setProfileErrors({});
     setSaving(true);
     setMessage(null);
 
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${apiUrl}/auth/profile`, {
+      const response = await fetchWithAuth(`${apiUrl}/auth/profile`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json' },
         body: JSON.stringify(profileForm)
       });
 
@@ -79,27 +86,20 @@ export default function ProfilePage() {
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    const errs: FormErrors = {
+      currentPassword: validators.required(passwordForm.currentPassword, 'Current password'),
+      newPassword: validators.adminPassword(passwordForm.newPassword),
+      confirmPassword: validators.confirmPassword(passwordForm.confirmPassword, passwordForm.newPassword),
+    };
+    if (Object.values(errs).some(Boolean)) { setPasswordErrors(errs); return; }
+    setPasswordErrors({});
     setMessage(null);
-
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setMessage({ type: 'error', text: 'New passwords do not match' });
-      return;
-    }
-
-    if (passwordForm.newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'New password must be at least 6 characters' });
-      return;
-    }
-
     setSaving(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${apiUrl}/auth/change-password`, {
+      const response = await fetchWithAuth(`${apiUrl}/auth/change-password`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json' },
         body: JSON.stringify({
           currentPassword: passwordForm.currentPassword,
           newPassword: passwordForm.newPassword
@@ -177,11 +177,12 @@ export default function ProfilePage() {
               <input
                 type="text"
                 value={profileForm.name}
-                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => { setProfileForm({ ...profileForm, name: e.target.value }); setProfileErrors((p) => clearError(p, 'name')); }}
+                className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${profileErrors.name ? 'border-red-500' : 'border-gray-300'}`}
                 placeholder="Enter your name"
               />
             </div>
+            {profileErrors.name && <p className="mt-1 text-xs text-red-600">{profileErrors.name}</p>}
           </div>
 
           <div>
@@ -205,11 +206,12 @@ export default function ProfilePage() {
               <input
                 type="tel"
                 value={profileForm.phone}
-                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={(e) => { setProfileForm({ ...profileForm, phone: e.target.value }); setProfileErrors((p) => clearError(p, 'phone')); }}
+                className={`pl-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${profileErrors.phone ? 'border-red-500' : 'border-gray-300'}`}
                 placeholder="+91 XXXXX XXXXX"
               />
             </div>
+            {profileErrors.phone && <p className="mt-1 text-xs text-red-600">{profileErrors.phone}</p>}
           </div>
 
           <div className="flex justify-end pt-2">
@@ -242,10 +244,9 @@ export default function ProfilePage() {
                   <input
                     type={showPasswords[field] ? 'text' : 'password'}
                     value={passwordForm[keys[field]]}
-                    onChange={(e) => setPasswordForm({ ...passwordForm, [keys[field]]: e.target.value })}
-                    className="pl-10 pr-10 w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onChange={(e) => { setPasswordForm({ ...passwordForm, [keys[field]]: e.target.value }); setPasswordErrors((p) => clearError(p, keys[field])); }}
+                    className={`pl-10 pr-10 w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${passwordErrors[keys[field]] ? 'border-red-500' : 'border-gray-300'}`}
                     placeholder={`Enter ${labels[field].toLowerCase()}`}
-                    required
                   />
                   <button
                     type="button"
@@ -255,6 +256,7 @@ export default function ProfilePage() {
                     {showPasswords[field] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+                {passwordErrors[keys[field]] && <p className="mt-1 text-xs text-red-600">{passwordErrors[keys[field]]}</p>}
               </div>
             );
           })}

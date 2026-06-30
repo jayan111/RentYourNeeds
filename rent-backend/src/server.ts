@@ -23,6 +23,7 @@ import contentRoutes from './routes/content';
 import subscriptionRoutes from './routes/subscriptions';
 import inventoryRoutes from './routes/inventory';
 import adminRoutes from './routes/admin';
+import kycRoutes from './routes/kyc';
 import { healthCheck, globalErrorHandler, validateRequest, setupGracefulShutdown } from './middleware/serverValidation';
 
 dotenv.config();
@@ -74,6 +75,7 @@ app.use('/api/content', contentRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/inventory', inventoryRoutes); // Rate limiting applied in route file
 app.use('/api/admin', adminRoutes); // Rate limiting applied in route file
+app.use('/api/kyc', kycRoutes);
 
 // Real-time order updates via SSE
 app.get('/api/orders/stream', (req, res) => {

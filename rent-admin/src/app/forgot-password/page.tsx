@@ -4,15 +4,20 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { validators } from '@/lib/validation';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const emailErr = validators.email(email);
+    if (emailErr) { setEmailError(emailErr); return; }
+    setEmailError('');
     setLoading(true);
     setError('');
 
@@ -103,12 +108,12 @@ export default function ForgotPasswordPage() {
               <input
                 id="email"
                 type="email"
-                required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="pl-10 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(''); }}
+                className={`pl-10 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${emailError ? 'border-red-500' : 'border-gray-300'}`}
                 placeholder="Enter your email"
               />
+              {emailError && <p className="mt-1 text-xs text-red-600">{emailError}</p>}
             </div>
           </div>
 

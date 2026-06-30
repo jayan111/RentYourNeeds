@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface DashboardStats {
   revenue: {
@@ -36,8 +37,8 @@ const defaultStats: DashboardStats = {
   revenue: { monthly: 0, quarterly: 0, yearly: 0, growth: 0 },
   subscriptions: { active: 0, paused: 0, cancelled: 0, total: 0 },
   inventory: { total: 0, available: 0, rented: 0, maintenance: 0, retired: 0 },
-  users: { total: 0, verified: 0, pending: 0, rejected: 0 },
-};
+  users: { total: 0, verified: 0, pending: 0, rejected: 0 }
+      };
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
@@ -50,19 +51,15 @@ export default function DashboardPage() {
   const fetchDashboardStats = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/stats', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
+      const response = await fetchWithAuth('/api/admin/stats');
       const data = await response.json();
       if (data.data) {
         setStats({
           revenue: { ...defaultStats.revenue, ...data.data.revenue },
           subscriptions: { ...defaultStats.subscriptions, ...data.data.subscriptions },
           inventory: { ...defaultStats.inventory, ...data.data.inventory },
-          users: { ...defaultStats.users, ...data.data.users },
-        });
+          users: { ...defaultStats.users, ...data.data.users }
+      });
       }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error);

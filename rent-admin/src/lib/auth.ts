@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { fetchWithAuth, clearAuthTokens } from './fetchWithAuth';
 
 interface User {
   id: string;
@@ -9,6 +10,9 @@ interface User {
   name: string;
   role: string;
 }
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -28,27 +32,23 @@ export function useAuth() {
       }
 
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
-        const response = await fetch(`${apiUrl}/auth/verify`, {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
+        // fetchWithAuth handles 401 → auto-refresh → retry automatically
+        const response = await fetchWithAuth(`${API_BASE}/auth/verify`);
 
         if (response.ok) {
           const parsedUser = JSON.parse(userData);
           if (parsedUser.role !== 'admin') {
-            localStorage.clear();
+            clearAuthTokens();
             router.push('/login');
             return;
           }
           setUser(parsedUser);
         } else {
-          localStorage.clear();
+          // refresh was attempted inside fetchWithAuth and failed — tokens already cleared
           router.push('/login');
         }
-      } catch (error) {
-        localStorage.clear();
+      } catch {
+        clearAuthTokens();
         router.push('/login');
       } finally {
         setLoading(false);
@@ -58,9 +58,13 @@ export function useAuth() {
     checkAuth();
   }, [router]);
 
-  const logout = () => {
-    localStorage.clear();
-    router.push('/login');
+  const logout = async () => {
+    try {
+      await fetchWithAuth(`${API_BASE}/auth/logout`, { method: 'POST' }).catch(() => {});
+    } finally {
+      clearAuthTokens();
+      router.push('/login');
+    }
   };
 
   return { user, loading, logout };

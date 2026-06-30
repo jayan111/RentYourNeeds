@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(grep -rn '\\\\$[0-9]' /Users/jayankhimsuriya/Downloads/RentYourNeeds/rent-front/src/ --include=\"*.tsx\" --include=\"*.ts\" -l)",
+      "Bash(grep -rn \"formatPrice\\\\|₹\\\\|\\\\\\\\\\\\$[0-9]\" /Users/jayankhimsuriya/Downloads/RentYourNeeds/rent-front/src/ --include=\"*.tsx\")",
+      "Bash(grep -rn 'currency.*USD\\\\|formatPrice\\\\|\\\\\\\\\\\\$[0-9]\\\\|\"\\\\\\\\\\\\$\"\\\\|currency.*dollar' /Users/jayankhimsuriya/Downloads/RentYourNeeds/rent-front/src/ --include=\"*.tsx\" --include=\"*.ts\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(xargs cat -n)"
+    ]
+  }
+}

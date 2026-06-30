@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
@@ -14,9 +14,11 @@ export default function CheckoutPage() {
   const router = useRouter();
   const cartItems = useSelector((state: any) => state.cart.items);
   const cartTotal = useSelector((state: any) => state.cart.total);
-  
+
   const [loading, setLoading] = useState(false);
   const [subscriptionType, setSubscriptionType] = useState<'one-time' | 'recurring'>('one-time');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [guestEmail, setGuestEmail] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState({
     street: '',
     city: '',
@@ -24,29 +26,48 @@ export default function CheckoutPage() {
     pincode: '',
   });
 
+  // Check login state on mount
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    setIsLoggedIn(!!token);
+  }, []);
+
   const handleCheckout = async () => {
     try {
       setLoading(true);
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+      const token = localStorage.getItem('accessToken') || '';
+
+      // Resolve email: from user localStorage or guest input
+      let resolvedEmail = guestEmail;
+      if (token) {
+        try {
+          const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
+          if (storedUser.email) resolvedEmail = storedUser.email;
+        } catch {}
+      }
+
       const response = await fetch(`${apiUrl}/orders/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('accessToken') || ''}`
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           items: cartItems,
           deliveryAddress,
           subscriptionType,
           tenureMonths: Math.max(...cartItems.map((i: any) => i.tenureMonths || 1), 1),
-          email: localStorage.getItem('userEmail') || 'guest@example.com'
+          email: resolvedEmail || 'guest@example.com',
         })
       });
 
       const data = await response.json();
 
       if (data.url) {
+        // Persist guest email for order tracking on the orders page
+        if (resolvedEmail) localStorage.setItem('guestOrderEmail', resolvedEmail);
         window.location.href = data.url;
       } else {
         alert('Failed to create checkout session');
@@ -159,6 +180,26 @@ export default function CheckoutPage() {
               </div>
             </div>
           </div>
+
+          {/* Guest Email — shown only when not logged in */}
+          {!isLoggedIn && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border">
+              <h2 className="text-lg font-semibold mb-1">Email Address</h2>
+              <p className="text-sm text-gray-500 mb-4">Required to track your order after checkout</p>
+              <input
+                type="email"
+                required
+                value={guestEmail}
+                onChange={(e) => setGuestEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+              />
+              <p className="text-xs text-gray-400 mt-2">
+                Already have an account?{' '}
+                <a href="/auth/login" className="text-primary-600 hover:text-primary-700 font-medium">Sign in</a>
+              </p>
+            </div>
+          )}
 
           {/* Delivery Address */}
           <div className="bg-white p-6 rounded-lg shadow">

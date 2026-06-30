@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import { Josefin_Sans } from 'next/font/google';
 import './globals.css';
-import { Header } from '@/components/layout/Header';
-import { Footer } from '@/components/layout/Footer';
+import { ConditionalLayout } from '@/components/layout/ConditionalLayout';
 import { Providers } from '@/components/providers/Providers';
 
 const josefinSans = Josefin_Sans({ 
@@ -87,13 +86,9 @@ export default function RootLayout({
     <html lang="en" className={josefinSans.variable}>
       <body className={`${josefinSans.className} antialiased`}>
         <Providers>
-          <div className="min-h-screen flex flex-col">
-            <Header />
-            <main className="flex-1">
-              {children}
-            </main>
-            <Footer />
-          </div>
+          <ConditionalLayout>
+            {children}
+          </ConditionalLayout>
         </Providers>
       </body>
     </html>

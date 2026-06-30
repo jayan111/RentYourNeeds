@@ -15,19 +15,33 @@ interface SearchBarProps {
 export function SearchBar({ onSearch, placeholder = "Search products...", className, defaultValue = '' }: SearchBarProps) {
   const [query, setQuery] = useState(defaultValue);
   const [isFocused, setIsFocused] = useState(false);
-  const debouncedQuery = useDebounce(query, 300);
+  const debouncedQuery = useDebounce(query, 400);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isFirstRender = useRef(true);
 
+  // Only sync external defaultValue changes when the input is NOT focused (e.g. navigating back)
   useEffect(() => {
-    setQuery(defaultValue);
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (document.activeElement !== inputRef.current) {
+      setQuery(defaultValue);
+    }
   }, [defaultValue]);
 
+  // Only trigger search after user changes, not on every defaultValue sync
+  const prevDebounced = useRef(debouncedQuery);
   useEffect(() => {
-    onSearch(debouncedQuery);
+    if (prevDebounced.current !== debouncedQuery) {
+      prevDebounced.current = debouncedQuery;
+      onSearch(debouncedQuery);
+    }
   }, [debouncedQuery, onSearch]);
 
   const handleClear = () => {
     setQuery('');
+    onSearch('');
     inputRef.current?.focus();
   };
 
@@ -35,14 +49,14 @@ export function SearchBar({ onSearch, placeholder = "Search products...", classN
     <div className={cn('relative', className)}>
       <div className={cn(
         'relative flex items-center transition-all duration-200',
-        isFocused ? 'scale-105' : 'scale-100'
+        isFocused ? 'scale-[1.02]' : 'scale-100'
       )}>
-        <Search className="absolute left-3 w-5 h-5 text-gray-400 transition-colors" />
+        <Search className="absolute left-3 w-5 h-5 text-gray-400" />
         <input
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={e => setQuery(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           placeholder={placeholder}
@@ -54,10 +68,7 @@ export function SearchBar({ onSearch, placeholder = "Search products...", classN
           )}
         />
         {query && (
-          <button
-            onClick={handleClear}
-            className="absolute right-3 p-1 text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={handleClear} className="absolute right-3 p-1 text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-4 h-4" />
           </button>
         )}

@@ -50,17 +50,6 @@ function ProductsContent() {
     updateParams({ search: query, page: null });
   }, [updateParams]);
 
-  const handleFiltersChange = useCallback((filters: any) => {
-    const updates: Record<string, string | null> = {
-      category: filters.category || null,
-      minPrice: filters.priceRange?.min > 0 ? filters.priceRange.min.toString() : null,
-      maxPrice: filters.priceRange?.max < 1000 ? filters.priceRange.max.toString() : null,
-      rating: filters.rating > 0 ? filters.rating.toString() : null,
-      sortBy: filters.sortBy !== 'relevance' ? filters.sortBy : null,
-      page: null
-    };
-    updateParams(updates);
-  }, [updateParams]);
 
   const handlePageChange = useCallback((page: number) => {
     updateParams({ page: page.toString() });
@@ -201,7 +190,7 @@ function ProductsContent() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <ProductFilters onFiltersChange={handleFiltersChange} />
+            <ProductFilters />
           </motion.div>
           
           {/* Products Grid */}

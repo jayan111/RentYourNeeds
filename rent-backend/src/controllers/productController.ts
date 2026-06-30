@@ -64,9 +64,14 @@ export const getProducts = async (req: Request, res: Response) => {
     
     if (minPrice) {
       query += ` AND p.price >= ?`;
-      params.push(parseInt(minPrice as string));
+      params.push(parseFloat(minPrice as string));
     }
-    
+
+    if (req.query.maxPrice) {
+      query += ` AND p.price <= ?`;
+      params.push(parseFloat(req.query.maxPrice as string));
+    }
+
     if (rating) {
       query += ` AND p.rating >= ?`;
       params.push(parseFloat(rating as string));

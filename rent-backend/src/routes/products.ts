@@ -35,6 +35,17 @@ const router = Router();
 // Apply rate limiting
 router.use(rateLimits.products);
 
+// Override the global Cache-Control so browsers never serve stale product data.
+// Redis still provides server-side caching (invalidated on admin updates).
+router.use((req: Request, res: Response, next) => {
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // GET /featured — returns 8 highest-rated products for TrendingProducts component
 router.get('/featured', async (req: Request, res: Response) => {
   try {

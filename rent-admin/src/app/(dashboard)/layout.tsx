@@ -3,6 +3,7 @@
 import { useAuth } from '@/lib/auth';
 import { AdminSidebar } from '@/components/AdminSidebar';
 import { AdminHeader } from '@/components/AdminHeader';
+import { Toaster } from 'react-hot-toast';
 
 export default function DashboardLayout({
   children,
@@ -32,6 +33,7 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+      <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
     </div>
   );
 }

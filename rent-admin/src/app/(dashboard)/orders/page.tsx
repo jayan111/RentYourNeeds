@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHeaderCell } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface Order {
   id: string;
@@ -49,10 +51,7 @@ export default function OrdersPage() {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/admin/orders`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/admin/orders`);
       const data = await response.json();
 
       const formattedOrders = (data.data || []).map((order: any) => {
@@ -86,10 +85,7 @@ export default function OrdersPage() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/admin/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/admin/stats`);
       const data = await response.json();
       setStats(data.data);
     } catch (error) {
@@ -98,23 +94,15 @@ export default function OrdersPage() {
   };
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/${orderId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
-
-      if (response.ok) {
-        fetchOrders();
-      }
-    } catch (error) {
-      console.error('Failed to update status:', error);
-    }
+    const promise = fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/orders/${orderId}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+      }).then(async res => {
+      if (!res.ok) throw new Error('Failed to update');
+      fetchOrders();
+    });
+    toast.promise(promise, { loading: 'Updating...', success: 'Order status updated', error: 'Failed to update order' });
   };
 
   const viewOrderDetails = (order: Order) => {

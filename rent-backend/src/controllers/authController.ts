@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { AuthenticatedRequest } from '../types';
 import { getDB } from '../config/database';
 import { RowDataPacket } from 'mysql2';
+import { sendPasswordResetEmail } from '../services/email';
 
 interface UserRow extends RowDataPacket {
   id: string;
@@ -18,6 +19,7 @@ interface UserRow extends RowDataPacket {
   reset_token?: string;
   reset_token_expiry?: Date;
   refresh_token?: string;
+  must_change_password: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -85,7 +87,8 @@ export const login = async (req: AuthenticatedRequest, res: Response) => {
           name: user.name,
           phone: user.phone,
           role: user.role,
-          address: user.address ? JSON.parse(user.address) : null
+          address: user.address ? JSON.parse(user.address) : null,
+          must_change_password: !!user.must_change_password,
         }
       }
     });
@@ -322,10 +325,12 @@ export const forgotPassword = async (req: AuthenticatedRequest, res: Response) =
       [email]
     );
 
+    // Always return success to avoid email enumeration
     if (!users || users.length === 0) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.json({ message: 'If that email exists, a reset link has been sent' });
     }
 
+    const user = users[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
@@ -334,14 +339,54 @@ export const forgotPassword = async (req: AuthenticatedRequest, res: Response) =
       [resetToken, resetTokenExpiry, email]
     );
 
-    console.log(`Password reset email sent to ${email}`);
-    console.log(`Reset link: http://localhost:3000/reset-password?token=${resetToken}`);
+    const isAdmin = user.role === 'admin';
+    try {
+      await sendPasswordResetEmail(email, resetToken, user.name || email.split('@')[0], isAdmin);
+    } catch (emailErr) {
+      console.error('Failed to send reset email:', emailErr);
+      return res.status(500).json({ message: 'Failed to send reset email. Please try again.' });
+    }
 
-    res.json({
-      message: 'Password reset email sent'
-    });
+    res.json({ message: 'If that email exists, a reset link has been sent' });
   } catch (error) {
     console.error('Forgot password error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// First-time password set for auto-created accounts (no current password required)
+export const setPassword = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+    }
+
+    const db = await getDB();
+    if (!db) return res.status(500).json({ message: 'Database connection failed' });
+
+    const [users] = await db.query<UserRow[]>(
+      'SELECT must_change_password FROM users WHERE id = ? AND is_active = TRUE',
+      [userId]
+    );
+
+    if (!users?.length) return res.status(404).json({ message: 'User not found' });
+    if (!users[0].must_change_password) {
+      return res.status(403).json({ message: 'Password change not required. Use change-password instead.' });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 12);
+    await db.query(
+      'UPDATE users SET password = ?, must_change_password = 0, updated_at = NOW() WHERE id = ?',
+      [hashed, userId]
+    );
+
+    res.json({ message: 'Password set successfully' });
+  } catch (error) {
+    console.error('Set password error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

@@ -180,11 +180,51 @@ const createTables = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id),
       INDEX idx_user_id (user_id),
       INDEX idx_status (status)
+    )`,
+
+    // Admin settings table
+    `CREATE TABLE IF NOT EXISTS admin_settings (
+      \`key\` VARCHAR(100) PRIMARY KEY,
+      \`value\` TEXT,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`,
+
+    // KYC verifications table
+    `CREATE TABLE IF NOT EXISTS kyc_verifications (
+      id VARCHAR(50) PRIMARY KEY,
+      user_id VARCHAR(50),
+      user_email VARCHAR(255) NOT NULL,
+      document_type ENUM('aadhaar', 'pan', 'driving_license', 'passport') NOT NULL,
+      document_number VARCHAR(100) NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      date_of_birth DATE NOT NULL,
+      address TEXT,
+      status ENUM('pending', 'under_review', 'verified', 'rejected') DEFAULT 'pending',
+      rejection_reason TEXT,
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_user_id (user_id),
+      INDEX idx_email (user_email),
+      INDEX idx_status (status)
     )`
   ];
 
   for (const table of tables) {
     await connection.execute(table);
+  }
+
+  // Add columns that may be missing from tables created before schema updates
+  const migrations = [
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS refresh_token VARCHAR(500)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255)`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP NULL`,
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password TINYINT(1) NOT NULL DEFAULT 0`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE`,
+    `ALTER TABLE products ADD COLUMN IF NOT EXISTS subscription_durations JSON`,
+  ];
+  for (const m of migrations) {
+    try { await connection.execute(m); } catch (_) { /* ignore if already exists */ }
   }
 
   // Insert default categories

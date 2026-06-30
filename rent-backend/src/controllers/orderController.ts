@@ -1,10 +1,13 @@
 import { Response } from 'express';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { AuthenticatedRequest } from '../types';
 import { stripe, STRIPE_CONFIG } from '../config/stripe';
 import { getDB } from '../config/database';
 import { addJob } from '../services/queue';
 import { notifyOrderUpdate } from '../services/sse';
 import { RowDataPacket } from 'mysql2';
+import { sendOrderConfirmationEmail } from '../services/email';
 
 interface OrderRow extends RowDataPacket {
   id: string;
@@ -29,76 +32,110 @@ interface OrderRow extends RowDataPacket {
 export const createCheckoutSession = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { items, deliveryAddress, subscriptionType, tenureMonths, email, phone } = req.body;
-    const userId = req.user?.id || null;
-    const userName = req.user?.name || 'Guest';
+    const userId   = req.user?.id   || null;
+    const userName = req.user?.name  || 'Guest';
     const userEmail = req.user?.email || email || 'guest@example.com';
     const userPhone = req.user?.phone || phone || null;
 
-    if (!items || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    const totalAmount = items.reduce((sum: number, item: any) => 
-      sum + (item.product.price * item.quantity * (item.tenureMonths || 1)), 0);
+    if (!deliveryAddress?.street || !deliveryAddress?.city || !deliveryAddress?.state || !deliveryAddress?.pincode) {
+      return res.status(400).json({ message: 'Delivery address is incomplete (street, city, state, pincode required)' });
+    }
 
-    const lineItems = items.map((item: any) => ({
-      price_data: {
+    const isSubscription = subscriptionType === 'recurring';
+
+    // Total: monthly_price × qty × tenure for both modes (DB record represents full contract value)
+    const totalAmount = items.reduce(
+      (sum: number, item: any) => sum + parseFloat(item.product.price) * item.quantity * (item.tenureMonths || tenureMonths || 1),
+      0
+    );
+
+    // Stripe line items differ by mode:
+    // - subscription: bill monthly price each month (no tenure multiplier)
+    // - payment: bill the full tenure amount once
+    const lineItems = items.map((item: any) => {
+      const monthlyPrice = Math.round(parseFloat(item.product.price) * 100); // paise
+      const tenureMonthsForItem = item.tenureMonths || tenureMonths || 1;
+
+      const priceData: any = {
         currency: STRIPE_CONFIG.currency,
         product_data: {
           name: item.product.name,
-          description: item.product.description || '',
+          description: item.product.description?.slice(0, 500) || undefined,
         },
-        unit_amount: Math.round(item.product.price * 100 * (item.tenureMonths || 1)),
-      },
-      quantity: item.quantity,
-    }));
+        unit_amount: isSubscription
+          ? monthlyPrice                           // billed monthly — Stripe handles recurrence
+          : monthlyPrice * tenureMonthsForItem,    // billed once for full tenure
+      };
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: lineItems,
-      mode: subscriptionType === 'recurring' ? 'subscription' : 'payment',
-      success_url: `${STRIPE_CONFIG.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: STRIPE_CONFIG.cancelUrl,
-      customer_email: userEmail,
-      metadata: {
-        userId: userId || 'guest',
-        subscriptionType,
-        tenureMonths: tenureMonths?.toString() || '0',
-      },
+      if (isSubscription) {
+        priceData.recurring = { interval: 'month', interval_count: 1 };
+      }
+
+      return { price_data: priceData, quantity: item.quantity };
     });
 
-    const orderId = `order_${Date.now()}`;
-    
+    let session: any;
     try {
-      const db = await getDB();
-      
-      if (!db) {
-        console.error('Database connection not available');
-        return res.json({
-          sessionId: session.id,
-          url: session.url,
-          orderId,
-        });
-      }
-      
-      await db.query(
-        `INSERT INTO orders (id, user_id, user_name, user_email, user_phone, items, total_amount, subscription_type, tenure_months, status, payment_status, payment_intent_id, delivery_address) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)`,
-        [orderId, userId, userName, userEmail, userPhone, JSON.stringify(items), totalAmount, subscriptionType, tenureMonths || 1, session.id, JSON.stringify(deliveryAddress)]
-      );
-      console.log('Order saved to database:', orderId);
-    } catch (dbError: any) {
-      console.error('Database error:', dbError.message);
+      session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: lineItems,
+        mode: isSubscription ? 'subscription' : 'payment',
+        success_url: `${STRIPE_CONFIG.successUrl}?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: STRIPE_CONFIG.cancelUrl,
+        customer_email: userEmail,
+        metadata: {
+          userId: userId || 'guest',
+          subscriptionType,
+          tenureMonths: String(tenureMonths || 1),
+        },
+      });
+    } catch (stripeErr: any) {
+      console.error('Stripe error:', stripeErr);
+      return res.status(502).json({
+        message: 'Payment gateway error',
+        reason: stripeErr?.message || 'Stripe session creation failed',
+        code: stripeErr?.code || stripeErr?.type,
+      });
     }
 
-    res.json({
+    const orderId = `order_${Date.now()}`;
+
+    try {
+      const db = await getDB();
+      if (db) {
+        await db.query(
+          `INSERT INTO orders
+             (id, user_id, user_name, user_email, user_phone,
+              items, total_amount, subscription_type, tenure_months,
+              status, payment_status, payment_intent_id, delivery_address)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, ?)`,
+          [
+            orderId, userId, userName, userEmail, userPhone,
+            JSON.stringify(items), totalAmount, subscriptionType,
+            tenureMonths || 1, session.id, JSON.stringify(deliveryAddress),
+          ]
+        );
+      }
+    } catch (dbErr: any) {
+      // DB failure is non-fatal — Stripe session is valid; log for ops
+      console.error('Order DB insert failed (session still valid):', dbErr.message);
+    }
+
+    return res.status(201).json({
       sessionId: session.id,
       url: session.url,
       orderId,
     });
-  } catch (error) {
-    console.error('Create checkout session error:', error);
-    res.status(500).json({ message: 'Failed to create checkout session' });
+  } catch (error: any) {
+    console.error('createCheckoutSession unexpected error:', error);
+    return res.status(500).json({
+      message: 'Failed to create checkout session',
+      reason: error?.message || 'Unexpected server error',
+    });
   }
 };
 
@@ -122,35 +159,97 @@ export const handleWebhook = async (req: AuthenticatedRequest, res: Response) =>
     }
 
     res.json({ received: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Webhook error:', error);
-    res.status(400).json({ message: 'Webhook error' });
+    res.status(400).json({ message: 'Webhook signature verification failed', reason: error?.message });
   }
 };
+
+interface UserRow extends RowDataPacket {
+  id: string;
+  email: string;
+  role: string;
+}
 
 async function handleSuccessfulPayment(session: any) {
   try {
     const db = await getDB();
     if (!db) return;
-    
+
     await db.query(
       `UPDATE orders SET payment_status = 'paid', status = 'confirmed', subscription_id = ?, updated_at = NOW() WHERE payment_intent_id = ?`,
       [session.subscription || null, session.id]
     );
 
     const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE payment_intent_id = ?', [session.id]);
-    
-    if (orders && orders.length > 0) {
-      const order = orders[0];
-      await addJob.email({
-        to: order.user_email,
-        subject: 'Order Confirmed - RentYourNeeds',
-        message: `Your order ${order.id} has been confirmed! Total: ₹${order.total_amount}`,
-        type: 'order_confirmation',
-      }).catch(console.error);
+    if (!orders?.length) return;
+
+    const order = orders[0];
+    const items = tryParseJSON(order.items, []);
+    const address = tryParseJSON(order.delivery_address, {});
+
+    // Auto-create account for guest checkouts
+    let credentials: { email: string; password: string } | undefined;
+    const email = order.user_email;
+    const isRealEmail = email && email !== 'guest@example.com' && email.includes('@');
+
+    if (isRealEmail) {
+      const [existing] = await db.query<UserRow[]>('SELECT id FROM users WHERE email = ?', [email]);
+
+      if (!existing?.length) {
+        // Generate a memorable 8-char temp password: 4 uppercase letters + 4 digits
+        const tempPassword =
+          crypto.randomBytes(2).toString('hex').toUpperCase() +
+          Math.floor(1000 + Math.random() * 9000).toString();
+
+        const hashedPassword = await bcrypt.hash(tempPassword, 10);
+        const userId = `user_${Date.now()}`;
+        const userName = order.user_name || email.split('@')[0];
+
+        await db.query(
+          `INSERT INTO users (id, name, email, phone, password, must_change_password)
+           VALUES (?, ?, ?, ?, ?, 1)`,
+          [userId, userName, email, order.user_phone || null, hashedPassword]
+        );
+
+        // Link the order to the new user account
+        await db.query(
+          'UPDATE orders SET user_id = ? WHERE payment_intent_id = ?',
+          [userId, session.id]
+        );
+
+        credentials = { email, password: tempPassword };
+      }
     }
+
+    // Send order confirmation email with optional credentials
+    try {
+      await sendOrderConfirmationEmail({
+        to: email,
+        orderId: order.id,
+        userName: order.user_name || 'Customer',
+        items: items.map((item: any) => ({
+          name: item.product?.name || 'Product',
+          quantity: item.quantity || 1,
+          price: parseFloat(item.product?.price || 0),
+          tenureMonths: item.tenureMonths || order.tenure_months || 1,
+        })),
+        totalAmount: order.total_amount,
+        deliveryAddress: address,
+        credentials,
+      });
+    } catch (emailErr) {
+      console.error('Order confirmation email failed:', emailErr);
+    }
+
+    // Queue notification job (non-blocking fallback)
+    addJob.email({
+      to: email,
+      subject: `Order Confirmed — #${order.id.slice(-8).toUpperCase()}`,
+      type: 'order_confirmation',
+    }).catch(() => {});
   } catch (error) {
-    console.error('Handle successful payment error:', error);
+    console.error('handleSuccessfulPayment error:', error);
   }
 }
 
@@ -158,19 +257,18 @@ async function handleRecurringPayment(invoice: any) {
   try {
     const db = await getDB();
     if (!db) return;
+
     const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE subscription_id = ?', [invoice.subscription]);
-    
-    if (orders && orders.length > 0) {
-      const order = orders[0];
+    if (orders?.length > 0) {
       await addJob.email({
-        to: order.user_email,
+        to: orders[0].user_email,
         subject: 'Subscription Payment Successful',
         message: `Your subscription payment of ₹${invoice.amount_paid / 100} was successful`,
         type: 'payment_success',
       }).catch(console.error);
     }
   } catch (error) {
-    console.error('Handle recurring payment error:', error);
+    console.error('handleRecurringPayment error:', error);
   }
 }
 
@@ -183,48 +281,33 @@ async function handleSubscriptionCancelled(subscription: any) {
       [subscription.id]
     );
   } catch (error) {
-    console.error('Handle subscription cancelled error:', error);
+    console.error('handleSubscriptionCancelled error:', error);
   }
 }
 
 export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = await getDB();
-    
     if (!db) {
-      console.log('Database not connected');
-      return res.json({ success: true, data: [], total: 0 });
+      return res.status(503).json({ success: false, message: 'Database unavailable', data: [], total: 0 });
     }
-    
+
     const userId = req.user?.id;
     const { status, page = 1, limit = 10, email, phone } = req.query;
-    
-    let query = 'SELECT * FROM orders';
-    let params: any[] = [];
-    const conditions = [];
 
-    // If user is logged in, show their orders
+    let query = 'SELECT * FROM orders';
+    const params: any[] = [];
+    const conditions: string[] = [];
+
     if (userId && req.user?.role !== 'admin') {
       conditions.push('user_id = ?');
       params.push(userId);
-    }
-    // If not logged in but email/phone provided, show matching orders
-    else if (!userId && (email || phone)) {
-      const guestConditions = [];
-      if (email) {
-        guestConditions.push('user_email = ?');
-        params.push(email);
-      }
-      if (phone) {
-        guestConditions.push('user_phone = ?');
-        params.push(phone);
-      }
-      if (guestConditions.length > 0) {
-        conditions.push(`(${guestConditions.join(' OR ')})`);
-      }
-    }
-    // Admin can see all orders
-    else if (req.user?.role !== 'admin' && !email && !phone) {
+    } else if (!userId && (email || phone)) {
+      const guestConds: string[] = [];
+      if (email) { guestConds.push('user_email = ?'); params.push(email); }
+      if (phone) { guestConds.push('user_phone = ?'); params.push(phone); }
+      if (guestConds.length) conditions.push(`(${guestConds.join(' OR ')})`);
+    } else if (req.user?.role !== 'admin' && !email && !phone) {
       return res.json({ success: true, data: [], total: 0 });
     }
 
@@ -233,96 +316,74 @@ export const getOrders = async (req: AuthenticatedRequest, res: Response) => {
       params.push(status);
     }
 
-    if (conditions.length > 0) {
-      query += ` WHERE ${conditions.join(' AND ')}`;
-    }
-
+    if (conditions.length) query += ` WHERE ${conditions.join(' AND ')}`;
     query += ' ORDER BY created_at DESC';
 
-    // Count total orders
     const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) as total').split('ORDER BY')[0];
     const [countResult] = await db.query<any[]>(countQuery, params);
     const total = countResult[0]?.total || 0;
 
-    // Pagination
-    const pageNum = parseInt(page as string);
+    const pageNum  = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const offset = (pageNum - 1) * limitNum;
-
     query += ' LIMIT ? OFFSET ?';
-    params.push(limitNum, offset);
+    params.push(limitNum, (pageNum - 1) * limitNum);
 
     const [orders] = await db.query<OrderRow[]>(query, params);
-    
-    console.log(`Found ${orders?.length || 0} orders`);
 
     const formattedOrders = (orders || []).map(order => {
-      const items = JSON.parse(order.items || '[]');
-      const address = JSON.parse(order.delivery_address || '{}');
+      const items = tryParseJSON(order.items, []);
+      const address = tryParseJSON(order.delivery_address, {});
       const estimatedDelivery = new Date(order.created_at);
       estimatedDelivery.setDate(estimatedDelivery.getDate() + 5);
 
       return {
         orderId: order.id,
-        status: order.status.toUpperCase(),
+        status: order.status?.toUpperCase(),
         createdAt: order.created_at,
-        user: {
-          userId: order.user_id,
-          name: order.user_name,
-          email: order.user_email,
-          phone: order.user_phone
-        },
+        user: { userId: order.user_id, name: order.user_name, email: order.user_email, phone: order.user_phone },
         items: items.map((item: any) => ({
-          productId: item.product.id,
-          name: item.product.name,
+          productId: item.product?.id,
+          name: item.product?.name,
           quantity: item.quantity,
-          price: item.product.price,
+          price: item.product?.price,
           tenureMonths: item.tenureMonths || 1,
-          total: item.product.price * item.quantity * (item.tenureMonths || 1)
+          total: parseFloat(item.product?.price || 0) * item.quantity * (item.tenureMonths || 1),
         })),
         pricing: {
           subtotal: order.total_amount,
           discount: 0,
           tax: Math.round(order.total_amount * 0.18),
           deliveryFee: 0,
-          grandTotal: order.total_amount
+          grandTotal: order.total_amount,
         },
         payment: {
           paymentId: order.payment_intent_id,
           method: order.subscription_type === 'recurring' ? 'SUBSCRIPTION' : 'ONE_TIME',
-          status: order.payment_status.toUpperCase(),
-          transactionId: order.payment_intent_id
+          status: order.payment_status?.toUpperCase(),
+          transactionId: order.payment_intent_id,
         },
         shippingAddress: {
           addressLine1: address.street,
           city: address.city,
           state: address.state,
           pincode: address.pincode,
-          country: 'India'
+          country: 'India',
         },
         estimatedDelivery: estimatedDelivery.toISOString().split('T')[0],
         tenureMonths: order.tenure_months,
-        trackingNumber: order.tracking_number
+        trackingNumber: order.tracking_number,
       };
     });
 
     const totalPages = Math.ceil(total / limitNum);
-    const hasMore = pageNum < totalPages;
-
-    res.json({ 
-      success: true, 
-      data: formattedOrders, 
-      pagination: {
-        total,
-        page: pageNum,
-        totalPages,
-        hasMore,
-        limit: limitNum
-      }
+    res.json({
+      success: true,
+      data: formattedOrders,
+      pagination: { total, page: pageNum, totalPages, hasMore: pageNum < totalPages, limit: limitNum },
     });
-  } catch (error) {
-    console.error('Get orders error:', error);
-    res.json({ success: false, data: [], total: 0 });
+  } catch (error: any) {
+    console.error('getOrders error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch orders', reason: error?.message });
   }
 };
 
@@ -331,70 +392,59 @@ export const getOrderById = async (req: AuthenticatedRequest, res: Response) => 
     const { id } = req.params;
     const db = await getDB();
     if (!db) {
-      return res.status(500).json({ success: false, message: 'Database connection failed' });
+      return res.status(503).json({ success: false, message: 'Database unavailable' });
     }
-    
-    const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE id = ?', [id]);
 
-    if (!orders || orders.length === 0) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
+    const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE id = ?', [id]);
+    if (!orders?.length) {
+      return res.status(404).json({ success: false, message: `Order '${id}' not found` });
     }
 
     const order = orders[0];
-
     if (req.user?.role !== 'admin' && order.user_id !== req.user?.id) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
+      return res.status(403).json({ success: false, message: 'Access denied — this order belongs to another user' });
     }
 
-    const items = JSON.parse(order.items || '[]');
-    const address = JSON.parse(order.delivery_address || '{}');
+    const items = tryParseJSON(order.items, []);
+    const address = tryParseJSON(order.delivery_address, {});
     const estimatedDelivery = new Date(order.created_at);
     estimatedDelivery.setDate(estimatedDelivery.getDate() + 5);
 
-    const formattedOrder = {
-      orderId: order.id,
-      status: order.status.toUpperCase(),
-      createdAt: order.created_at,
-      user: {
-        userId: order.user_id,
-        name: order.user_name,
-        email: order.user_email
+    res.json({
+      success: true,
+      order: {
+        orderId: order.id,
+        status: order.status?.toUpperCase(),
+        createdAt: order.created_at,
+        user: { userId: order.user_id, name: order.user_name, email: order.user_email },
+        items: items.map((item: any) => ({
+          productId: item.product?.id,
+          name: item.product?.name,
+          quantity: item.quantity,
+          price: item.product?.price,
+          total: parseFloat(item.product?.price || 0) * item.quantity * (item.tenureMonths || 1),
+        })),
+        pricing: {
+          subtotal: order.total_amount,
+          discount: 0,
+          tax: Math.round(order.total_amount * 0.18),
+          deliveryFee: 0,
+          grandTotal: order.total_amount,
+        },
+        payment: {
+          paymentId: order.payment_intent_id,
+          method: order.subscription_type === 'recurring' ? 'SUBSCRIPTION' : 'ONE_TIME',
+          status: order.payment_status?.toUpperCase(),
+          transactionId: order.payment_intent_id,
+        },
+        shippingAddress: { addressLine1: address.street, city: address.city, state: address.state, pincode: address.pincode, country: 'India' },
+        estimatedDelivery: estimatedDelivery.toISOString().split('T')[0],
+        tenureMonths: order.tenure_months,
       },
-      items: items.map((item: any) => ({
-        productId: item.product.id,
-        name: item.product.name,
-        quantity: item.quantity,
-        price: item.product.price,
-        total: item.product.price * item.quantity * (item.tenureMonths || 1)
-      })),
-      pricing: {
-        subtotal: order.total_amount,
-        discount: 0,
-        tax: Math.round(order.total_amount * 0.18),
-        deliveryFee: 0,
-        grandTotal: order.total_amount
-      },
-      payment: {
-        paymentId: order.payment_intent_id,
-        method: order.subscription_type === 'recurring' ? 'SUBSCRIPTION' : 'ONE_TIME',
-        status: order.payment_status.toUpperCase(),
-        transactionId: order.payment_intent_id
-      },
-      shippingAddress: {
-        addressLine1: address.street,
-        city: address.city,
-        state: address.state,
-        pincode: address.pincode,
-        country: 'India'
-      },
-      estimatedDelivery: estimatedDelivery.toISOString().split('T')[0],
-      tenureMonths: order.tenure_months
-    };
-
-    res.json({ success: true, order: formattedOrder });
-  } catch (error) {
-    console.error('Get order error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    });
+  } catch (error: any) {
+    console.error('getOrderById error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch order', reason: error?.message });
   }
 };
 
@@ -402,34 +452,37 @@ export const updateOrderStatus = async (req: AuthenticatedRequest, res: Response
   try {
     const { id } = req.params;
     const { status } = req.body;
+
+    const VALID_STATUSES = ['pending', 'confirmed', 'processing', 'delivered', 'active', 'cancelled', 'returned'];
+    if (!status || !VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ message: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
+    }
+
     const db = await getDB();
-    if (!db) {
-      return res.status(500).json({ message: 'Database connection failed' });
+    if (!db) return res.status(503).json({ message: 'Database unavailable' });
+
+    const [existing] = await db.query<OrderRow[]>('SELECT id FROM orders WHERE id = ?', [id]);
+    if (!existing?.length) {
+      return res.status(404).json({ message: `Order '${id}' not found` });
     }
 
     await db.query('UPDATE orders SET status = ?, updated_at = NOW() WHERE id = ?', [status, id]);
-
-    // Notify real-time SSE clients
     notifyOrderUpdate(id, status);
 
     const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE id = ?', [id]);
-
-    if (orders && orders.length > 0) {
-      const order = orders[0];
+    if (orders?.length) {
       await addJob.email({
-        to: order.user_email,
+        to: orders[0].user_email,
         subject: 'Order Status Updated',
-        message: `Your order ${order.id} status: ${status}`,
+        message: `Your order ${orders[0].id} status has changed to: ${status}`,
         type: 'status_update',
       }).catch(console.error);
-
-      res.json({ message: 'Order status updated', data: order });
-    } else {
-      res.json({ message: 'Order status updated' });
     }
-  } catch (error) {
-    console.error('Update order status error:', error);
-    res.status(500).json({ message: 'Server error' });
+
+    res.json({ message: 'Order status updated', status, orderId: id });
+  } catch (error: any) {
+    console.error('updateOrderStatus error:', error);
+    res.status(500).json({ message: 'Failed to update order status', reason: error?.message });
   }
 };
 
@@ -437,14 +490,11 @@ export const cancelSubscription = async (req: AuthenticatedRequest, res: Respons
   try {
     const { id } = req.params;
     const db = await getDB();
-    if (!db) {
-      return res.status(500).json({ message: 'Database connection failed' });
-    }
-    
-    const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE id = ?', [id]);
+    if (!db) return res.status(503).json({ message: 'Database unavailable' });
 
-    if (!orders || orders.length === 0) {
-      return res.status(404).json({ message: 'Order not found' });
+    const [orders] = await db.query<OrderRow[]>('SELECT * FROM orders WHERE id = ?', [id]);
+    if (!orders?.length) {
+      return res.status(404).json({ message: `Order '${id}' not found` });
     }
 
     const order = orders[0];
@@ -452,51 +502,44 @@ export const cancelSubscription = async (req: AuthenticatedRequest, res: Respons
     if (order.subscription_id) {
       try {
         await stripe.subscriptions.cancel(order.subscription_id);
-      } catch (stripeError) {
-        console.error('Stripe cancellation error:', stripeError);
+      } catch (stripeErr: any) {
+        console.error('Stripe subscription cancellation failed:', stripeErr.message);
+        // Continue — cancel in DB regardless
       }
     }
 
     await db.query('UPDATE orders SET status = "cancelled", updated_at = NOW() WHERE id = ?', [id]);
 
-    res.json({ message: 'Subscription cancelled', data: order });
-  } catch (error) {
-    console.error('Cancel subscription error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.json({ message: 'Subscription cancelled', orderId: id });
+  } catch (error: any) {
+    console.error('cancelSubscription error:', error);
+    res.status(500).json({ message: 'Failed to cancel subscription', reason: error?.message });
   }
 };
 
-// Admin: get all orders in flat format (for admin table)
 export const getAdminOrders = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = await getDB();
-    if (!db) return res.json({ data: [], total: 0 });
+    if (!db) return res.status(503).json({ message: 'Database unavailable', data: [], total: 0 });
 
     const { status, page = 1, limit = 50 } = req.query;
-    const pageNum = parseInt(page as string);
+    const pageNum  = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const offset = (pageNum - 1) * limitNum;
+    const offset   = (pageNum - 1) * limitNum;
 
-    let whereClause = 'WHERE 1=1';
+    let where = 'WHERE 1=1';
     const params: any[] = [];
+    if (status && status !== 'all') { where += ' AND status = ?'; params.push(status); }
 
-    if (status && status !== 'all') {
-      whereClause += ' AND status = ?';
-      params.push(status);
-    }
-
-    const [countRows] = await db.query<RowDataPacket[]>(
-      `SELECT COUNT(*) as total FROM orders ${whereClause}`,
-      params
-    );
+    const [countRows] = await db.query<RowDataPacket[]>(`SELECT COUNT(*) as total FROM orders ${where}`, params);
     const total = (countRows[0] as any).total;
 
     const [rows] = await db.query<OrderRow[]>(
-      `SELECT * FROM orders ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM orders ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       [...params, limitNum, offset]
     );
 
-    const data = (rows || []).map((order: OrderRow) => ({
+    const data = (rows || []).map(order => ({
       id: order.id,
       user_id: order.user_id,
       user_name: order.user_name,
@@ -510,30 +553,27 @@ export const getAdminOrders = async (req: AuthenticatedRequest, res: Response) =
       payment_status: order.payment_status,
       delivery_address: order.delivery_address,
       tracking_number: order.tracking_number,
-      created_at: order.created_at
+      created_at: order.created_at,
     }));
 
     res.json({ data, total, page: pageNum, totalPages: Math.ceil(total / limitNum) });
-  } catch (error) {
-    console.error('Get admin orders error:', error);
-    res.json({ data: [], total: 0 });
+  } catch (error: any) {
+    console.error('getAdminOrders error:', error);
+    res.status(500).json({ message: 'Failed to fetch orders', reason: error?.message, data: [], total: 0 });
   }
 };
 
-export const getOrderStats = async (req: AuthenticatedRequest, res: Response) => {
+export const getOrderStats = async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const db = await getDB();
-    
-    if (!db) {
-      return res.json({ data: { total: 0, pending: 0, confirmed: 0, active: 0, delivered: 0, cancelled: 0, totalRevenue: 0, recurringRevenue: 0 } });
-    }
-    
+    if (!db) return res.status(503).json({ message: 'Database unavailable' });
+
     const [stats] = await db.query<any[]>(`
-      SELECT 
+      SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'pending'   THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
+        SUM(CASE WHEN status = 'active'    THEN 1 ELSE 0 END) as active,
         SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) as delivered,
         SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
         SUM(CASE WHEN payment_status = 'paid' THEN total_amount ELSE 0 END) as totalRevenue,
@@ -541,9 +581,14 @@ export const getOrderStats = async (req: AuthenticatedRequest, res: Response) =>
       FROM orders
     `);
 
-    res.json({ data: stats && stats.length > 0 ? stats[0] : {} });
-  } catch (error) {
-    console.error('Get order stats error:', error);
-    res.json({ data: { total: 0, pending: 0, confirmed: 0, active: 0, delivered: 0, cancelled: 0, totalRevenue: 0, recurringRevenue: 0 } });
+    res.json({ data: stats?.[0] || {} });
+  } catch (error: any) {
+    console.error('getOrderStats error:', error);
+    res.status(500).json({ message: 'Failed to fetch order stats', reason: error?.message });
   }
 };
+
+function tryParseJSON(raw: string | null | undefined, fallback: any) {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); } catch { return fallback; }
+}

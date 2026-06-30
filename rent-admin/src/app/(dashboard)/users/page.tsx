@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Filter, Eye, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface User {
   id: string;
@@ -26,10 +27,7 @@ export default function UsersPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const token = localStorage.getItem('accessToken');
-        const response = await fetch(`${apiUrl}/admin/users?search=${search}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await fetchWithAuth(`${apiUrl}/admin/users?search=${search}`);
         const data = await response.json();
         setUsers(data.data || []);
       } catch (error) {
@@ -44,19 +42,14 @@ export default function UsersPage() {
 
   const handleToggleActive = async (userId: string, currentActive: boolean) => {
     try {
-      const token = localStorage.getItem('accessToken');
-      await fetch(`${apiUrl}/admin/users/${userId}`, {
+      await fetchWithAuth(`${apiUrl}/admin/users/${userId}`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !currentActive })
       });
 
-      const response = await fetch(`${apiUrl}/admin/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetchWithAuth(`${apiUrl}/admin/users`);
       const data = await response.json();
       setUsers(data.data || []);
     } catch (error) {
@@ -66,22 +59,17 @@ export default function UsersPage() {
 
   const handleKYCAction = async (userId: string, action: 'approve' | 'reject') => {
     try {
-      const token = localStorage.getItem('accessToken');
-      await fetch(`${apiUrl}/admin/users/${userId}/verify`, {
+      await fetchWithAuth(`${apiUrl}/admin/users/${userId}/verify`, {
         method: 'PATCH',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+          'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentType: 'aadhar',
           status: action === 'approve' ? 'approved' : 'rejected'
         })
       });
 
-      const response = await fetch(`${apiUrl}/admin/users`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetchWithAuth(`${apiUrl}/admin/users`);
       const data = await response.json();
       setUsers(data.data || []);
     } catch (error) {

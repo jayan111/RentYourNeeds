@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHeaderCell } from '@/components/ui/Table';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
+import { fetchWithAuth } from '@/lib/fetchWithAuth';
 
 interface Subscription {
   id: string;
@@ -40,13 +42,10 @@ export default function SubscriptionsPage() {
   const fetchSubscriptions = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('accessToken');
       const params = new URLSearchParams({ limit: '50' });
       if (selectedStatus !== 'all') params.append('status', selectedStatus);
 
-      const response = await fetch(`${apiUrl}/admin/subscriptions?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await fetchWithAuth(`${apiUrl}/admin/subscriptions?${params}`);
       const data = await response.json();
       const subs: Subscription[] = data.data || [];
       setSubscriptions(subs);
@@ -63,22 +62,15 @@ export default function SubscriptionsPage() {
   };
 
   const handleStatusUpdate = async (subId: string, newStatus: string) => {
-    try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch(`${apiUrl}/admin/subscriptions/${subId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ status: newStatus })
-      });
-      if (response.ok) {
-        fetchSubscriptions();
-      }
-    } catch (error) {
-      console.error('Failed to update subscription:', error);
-    }
+    const promise = fetchWithAuth(`${apiUrl}/admin/subscriptions/${subId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+      }).then(async res => {
+      if (!res.ok) throw new Error('Failed');
+      fetchSubscriptions();
+    });
+    toast.promise(promise, { loading: 'Updating...', success: 'Subscription updated', error: 'Failed to update subscription' });
   };
 
   const formatCurrency = (amount: number) =>
